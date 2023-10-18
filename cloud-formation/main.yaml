@@ -1,0 +1,286 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: |
+            This is the Main Template for deploying a self-managed Kubernetes cluster on AWS using CloudFormation.
+            The template is organized in NestedStacks to make clearer the different components of the cluster.
+            The stacks are the following ones: 
+            - VPC
+            - BastionHost
+            - PolicyRole
+            - ControlPlane
+            - Worker
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: Name of the project
+    Default: k8s-self-managed
+
+  EnvironmentName:
+    Description: An environment name that is prefixed to resource names
+    Type: String
+    Default: dev
+
+  StackName:
+    Description: Name of the stack
+    Type: String
+    Default: k8s-self-managed
+  
+  VpcStackName:
+    Description: Please enter the name for the VpcStackName
+    Type: String
+    Default: VPC
+  
+  BastionHostStackName:
+    Description: Please enter the name for the BastionHostStackName
+    Type: String
+    Default: BastionHost  
+  
+  PolicyRoleStackName:
+    Description: Please enter the name for the PolicyRoleStackName
+    Type: String
+    Default: PolicyRole
+
+  ControlPlaneStackName:
+    Description: Please enter the name for the ControlPlaneStackName
+    Type: String
+    Default: ControlPlane
+
+  WorkerStackName:
+    Description: Please enter the name for the WorkerStackName
+    Type: String
+    Default: Worker
+
+  VpcCIDR:
+    Description: Please enter the IP range (CIDR notation) for this VPC
+    Type: String
+    Default: 10.192.0.0/16
+  
+  HomeInternetRouterIp: 
+    Description: Home Internet Router IP Address 
+    Type: String
+    Default: 79.31.220.40/32
+  
+  AvailabilityZones:
+    Description: List of Availability Zones to use (comma-delimited)
+    Type: String
+    Default: "us-east-1a,us-east-1b,us-east-1c"
+
+  PublicSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the public subnet in the first Availability Zone
+    Type: String
+    Default: 10.192.0.0/20
+
+  PrivateSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the private subnet in the first Availability Zone
+    Type: String
+    Default: 10.192.16.0/20
+
+  PrivateSubnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the private subnet in the second Availability Zone
+    Type: String
+    Default: 10.192.32.0/20
+  
+  PrivateSubnet3CIDR:
+    Description: Please enter the IP range (CIDR notation) for the private subnet in the third Availability Zone
+    Type: String
+    Default: 10.192.48.0/20
+  
+  S3BucketName:
+    Description: Please enter the name for the S3BucketName
+    Type: String
+    Default: my-k8s-cluster-bucket
+  
+  BastionHostInstanceType:
+    Description: Please enter Bastion Host Instance Type
+    Type: String
+    Default: t2.micro
+  
+  K8sClusterName:
+    Description: Please enter the name for the K8sClusterName
+    Type: String
+    Default: my-k8s
+
+  K8sNodesHostnameMode:
+    Description: Please enter the name for the K8sNodesHostnameMode
+    Type: String
+    Default: instance-id
+  
+  ControlPlaneAutoScalingGroupName:
+    Description: Please enter the name for the ControlPlaneAsgName
+    Type: String
+    Default: controlplane-asg
+  
+  ControlPlaneAutoScalingGroupDesiredCapacity:
+    Description: Please enter the desired capacity for the ControlPlaneAsgName
+    Type: Number
+    Default: 3
+
+  ControlPlaneAutoScalingGroupMaxSize:
+    Description: Please enter the max size for the ControlPlaneAsgName
+    Type: Number
+    Default: 3
+  
+  ControlPlaneInstanceType:
+    Description: Please enter the instance type for the ControlPlaneAsgName
+    Type: String
+    Default: t3.medium
+  
+  ControlPlaneRootVolumeSize:
+    Description: Please enter the root volume size for the ControlPlaneAsgName
+    Type: Number
+    Default: 16
+
+  WorkerInstanceType:
+    Description: Please enter the instance type for the WorkerAsgName
+    Type: String
+    Default: t3.large
+  
+  WorkerRootVolumeSize:
+    Description: Please enter the root volume size for the WorkerAsgName
+    Type: Number
+    Default: 16
+  
+  WorkerSubnet1AutoScalingGroupMaxSize:
+    Description: Please enter the max size for the WorkerSubnet1AutoScalingGroup
+    Type: Number
+    Default: 3
+  
+  WorkerSubnet2AutoScalingGroupMaxSize:
+    Description: Please enter the max size for the WorkerSubnet2AutoScalingGroup
+    Type: Number
+    Default: 3
+  
+  WorkerSubnet3AutoScalingGroupMaxSize:
+    Description: Please enter the max size for the WorkerSubnet3AutoScalingGroup
+    Type: Number
+    Default: 3
+
+Resources:
+  VpcStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formations/vpc/stack.yaml
+      Parameters:
+        ProjectName: !Ref ProjectName
+        EnvironmentName: !Ref EnvironmentName
+        StackName: !Ref VpcStackName
+        VpcCIDR: !Ref VpcCIDR
+        PublicSubnet1CIDR: !Ref PublicSubnet1CIDR
+        PrivateSubnet1CIDR: !Ref PrivateSubnet1CIDR
+        PrivateSubnet2CIDR: !Ref PrivateSubnet2CIDR
+        PrivateSubnet3CIDR: !Ref PrivateSubnet3CIDR
+        AvailabilityZones: !Ref AvailabilityZones
+  
+  BastionHostStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - VpcStack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formations/bastion-host/stack.yaml
+      Parameters:
+        ProjectName: !Ref ProjectName
+        EnvironmentName: !Ref EnvironmentName
+        StackName: !Ref BastionHostStackName
+        VpcId: !ImportValue
+          Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-VpcId"
+        VpcCIDR: !ImportValue
+          Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-VpcCIDR"
+        PublicSubnet1Id: !ImportValue
+          Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-PublicSubnet1Id"
+        HomeInternetRouterIp: !Ref HomeInternetRouterIp
+        BastionHostInstanceType: !Ref BastionHostInstanceType
+    
+  PolicyRoleStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - VpcStack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formations/policy-role/stack.yaml
+      Parameters:
+        ProjectName: !Ref ProjectName
+        EnvironmentName: !Ref EnvironmentName
+        StackName: !Ref PolicyRoleStackName
+        S3BucketName: !Ref S3BucketName
+        K8sClusterName: !Ref K8sClusterName
+  
+  ControlPlaneStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - VpcStack
+      - BastionHostStack
+      - PolicyRoleStack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formations/controlplane/stack.yaml
+      Parameters:
+        ProjectName: !Ref ProjectName
+        EnvironmentName: !Ref EnvironmentName
+        StackName: !Ref ControlPlaneStackName
+        VpcId: !ImportValue
+          Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-VpcId"
+        VpcCIDR: !ImportValue
+          Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-VpcCIDR"
+        PublicSubnet1Id: !ImportValue
+          Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-PublicSubnet1Id"
+        PrivateSubnet1Id: !ImportValue
+          Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-PrivateSubnet1Id"
+        PrivateSubnet2Id: !ImportValue
+          Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-PrivateSubnet2Id"
+        PrivateSubnet3Id: !ImportValue
+          Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-PrivateSubnet3Id"
+        BastionHostSecurityGroupId: !ImportValue
+          Fn::Sub: "${ProjectName}-${EnvironmentName}-${BastionHostStackName}-BastionHostSecurityGroupId"
+        K8sClusterName: !Ref K8sClusterName
+        K8sNodesHostnameMode: !Ref K8sNodesHostnameMode
+        PodsOverlayNetworkCidr: !Ref PodsOverlayNetworkCidr
+        ClusterServicesNetworkCidr: !Ref ClusterServicesNetworkCidr
+        ClusterDefaultDns: !Ref ClusterDefaultDns
+        KubernetesVersion: !Ref KubernetesVersion
+        ControlPlaneInstanceIAMRoleArn: !ImportValue
+          Fn::Sub: "${ProjectName}-${EnvironmentName}-${BastionHostStackName}-ControlPlaneInstanceIAMRoleArn"
+        ControlPlaneAutoScalingGroupName: !Ref ControlPlaneAutoScalingGroupName
+        ControlPlaneAutoScalingGroupDesiredCapacity: !Ref ControlPlaneAutoScalingGroupDesiredCapacity
+        ControlPlaneAutoScalingGroupMaxSize: !Ref ControlPlaneAutoScalingGroupMaxSize
+        ControlPlaneInstanceType: !Ref ControlPlaneInstanceType
+        ControlPlaneRootVolumeSize: !Ref ControlPlaneRootVolumeSize
+        S3BucketName: !Ref S3BucketName
+  
+  WorkerStack:
+      Type: AWS::CloudFormation::Stack
+      DependsOn:
+        - VpcStack
+        - BastionHostStack
+        - PolicyRoleStack
+      Properties:
+        TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formations/worker/stack.yaml
+        Parameters:
+          ProjectName: !Ref ProjectName
+          EnvironmentName: !Ref EnvironmentName
+          StackName: !Ref WorkerStackName
+          VpcId: !ImportValue
+            Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-VpcId"
+          VpcCIDR: !ImportValue
+            Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-VpcCIDR"
+          PublicSubnet1Id: !ImportValue
+            Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-PublicSubnet1Id"
+          PrivateSubnet1Id: !ImportValue
+            Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-PrivateSubnet1Id"
+          PrivateSubnet2Id: !ImportValue
+            Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-PrivateSubnet2Id"
+          PrivateSubnet3Id: !ImportValue
+            Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-PrivateSubnet3Id"
+          BastionHostSecurityGroupId: !ImportValue
+            Fn::Sub: "${ProjectName}-${EnvironmentName}-${BastionHostStackName}-BastionHostSecurityGroupId"
+          K8sClusterName: !Ref K8sClusterName
+          K8sNodesHostnameMode: !Ref K8sNodesHostnameMode
+          KubernetesVersion: !Ref KubernetesVersion
+          WorkerInstanceIAMRoleArn: !ImportValue
+            Fn::Sub: "${ProjectName}-${EnvironmentName}-${BastionHostStackName}-WorkerInstanceIAMRoleArn"
+          WorkerSubnet1AutoScalingGroupMaxSize: !Ref WorkerSubnet1AutoScalingGroupMaxSize
+          WorkerSubnet2AutoScalingGroupMaxSize: !Ref WorkerSubnet2AutoScalingGroupMaxSize
+          WorkerSubnet3AutoScalingGroupMaxSize: !Ref WorkerSubnet3AutoScalingGroupMaxSize
+          WorkerInstanceType: !Ref WorkerInstanceType
+          WorkerRootVolumeSize: !Ref WorkerRootVolumeSize
+          S3BucketName: !Ref S3BucketName
+
+
+

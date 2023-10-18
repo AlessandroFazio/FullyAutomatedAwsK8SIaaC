@@ -1,0 +1,387 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: |
+  This stack is used for creating the following Resources:
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: Please enter the name of the project
+
+  EnvironmentName:
+    Type: String
+    Description: An environment name that will be prefixed to resource names
+
+  StackName:
+    Type: String
+    Description: Name of the stack
+
+  VpcId:
+    Type: String
+    Description: Please enter the VPC ID
+
+  VpcCIDR:
+    Type: String
+    Description: Please enter the IP range (CIDR notation) for this VPC
+
+  PublicSubnet1Id: 
+    Type: AWS::EC2::Subnet::Id
+    Description: Please enter the public subnet ID
+
+  PrivateSubnet1Id: 
+    Type: AWS::EC2::Subnet::Id
+    Description: Please enter the private subnet1 ID
+
+  PrivateSubnet2Id: 
+    Type: AWS::EC2::Subnet::Id
+    Description: Please enter the private subnet2 ID
+
+  PrivateSubnet3Id: 
+    Type: AWS::EC2::Subnet::Id
+    Description: Please enter the private subnet3 ID
+  
+  BastionHostSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Please enter the Bastion Host Security Group ID
+
+  K8sClusterName: 
+    Type: String
+    Description: Please enter the name of the Kubernetes cluster
+
+  K8sNodesHostnameMode:
+    Type: String
+    Description: Please enter the hostname mode for the Kubernetes nodes
+  
+  PodsOverlayNetworkCidr:
+    Type: String
+    Description: Please enter the Pods overlay network CIDR
+  
+  ClusterServicesNetworkCidr:
+    Type: String
+    Description: Please enter the Cluster Services network CIDR
+  
+  ClusterDefaultDns:
+    Type: String
+    Description: Please enter the Cluster Default DNS
+  
+  KubernetesVersion:
+    Type: String
+    Description: Please enter the Kubernetes version
+  
+  ControlPlaneInstanceIAMRoleArn:
+    Type: String
+    Description: Please enter the ARN of the IAM role for the Control Plane
+
+  ControlPlaneAutoScalingGroupName: 
+    Type: String
+    Description: Please enter the name of the Control Plane Auto Scaling Group
+
+  ControlPlaneAutoScalingGroupDesiredCapacity:
+    Type: Number
+    Description: Please enter the desired capacity for the Control Plane Auto Scaling Group
+
+  ControlPlaneAutoScalingGroupMaxSize: 
+    Type: Number
+    Description: Please enter the max size for the Control Plane Auto Scaling Group
+
+  ControlPlaneInstanceType: 
+    Type: String
+    Description: Please enter the instance type for the Control Plane
+
+  ControlPlaneRootVolumeSize:
+    Type: Number
+    Description: Please enter the root volume size for the Control Plane
+
+  S3BucketName: 
+    Type: String
+    Description: Please enter the name for the S3BucketName
+
+Resources:
+  ControlPlaneNlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: ControlPlaneNlbSecurityGroup
+      Description: Security Group for ControlPlane NLB
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 6443
+          ToPort: 6443
+          CidrIp: !Ref VpcCIDR
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 6443
+          ToPort: 6443
+          DestinationSecurityGroupId: !Ref ControlPlaneSecurityGroup
+
+  ControlPlaneNlb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: controlplane-nlb
+      Scheme: internal
+      IpAddressType: ipv4
+      Subnets:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+        - !Ref PrivateSubnet3Id
+      Type: network
+      SecurityGroups:
+        - !Ref ControlPlaneNlbSecurityGroup
+      Tags:
+        - Key: Name
+          Value: controlplane-nlb
+
+  ControlPlaneNlbApiServerTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: controlplane-nlb-target-group
+      Port: 6443
+      Protocol: TCP
+      VpcId: !Ref VpcId
+      HealthCheckEnabled: True
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPort: 6443
+      HealthCheckProtocol: TCP
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 3
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: 240
+      UnhealthyThresholdCount: 3
+      Tags:
+        - Key: Name
+          Value: controlplane-nlb-target-group
+
+  ControlPlaneNlbListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ControlPlaneNlbApiServerTargetGroup
+      LoadBalancerArn: !Ref ControlPlaneNlb
+      Port: 6443
+      Protocol: TCP # TLS passthrough 
+      Tags:
+        - Key: Name
+          Value: controlplane-nlb-listener
+
+  ControlPlaneSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: controlplane-sg
+      Description: Security Group for Zookeeper Instances
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22   # SSH Port
+          ToPort: 22     # SSH Port
+          SourceSecurityGroupId: !Ref BastionHostSecurityGroupId
+        - IpProtocol: tcp 
+          FromPort: 179  # BGP port for calico 
+          ToPort: 179    # ZooKeeper port
+          CidrIp: !Ref VpcCIDR # VPC CIDR
+        - IpProtocol: udp
+          FromPort: 179  # BGP port for calico
+          ToPort: 179    # ZooKeeper port
+          CidrIp: !Ref VpcCIDR # VPC CIDR
+        - IpProtocol: 4   # Cusotom protocol (IP in IP)  
+          FromPort: -1  # All ports
+          ToPort: -1    # All ports
+          CidrIp: !Ref PodsOverlayNetworkCidr # Pods overlay network CIDR
+        - IpProtocol: tcp
+          FromPort: 10248  # Kubelet port 
+          ToPort: 10250    # Kubelet port
+          CidrIp: !Ref VpcCIDR # VPC CIDR
+        - IpProtocol: tcp
+          FromPort: 2379  # etcd port 
+          ToPort: 2380    # etcd port
+          CidrIp: !Ref VpcCIDR # VPC CIDR
+        - IpProtocol: tcp
+          FromPort: 6443  # Kubelet port 
+          ToPort: 6443    # Kubelet port
+          CidrIp: 0.0.0.0/0 # All IPs
+        - IpProtocol: tcp
+          FromPort: 443  # HTTPS port 
+          ToPort: 443    # HTTPS port
+          CidrIp: 0.0.0.0/0 # All IPs
+        - IpProtocol: icmp
+          FromPort: 8  # All ports
+          ToPort: -1    # All ports
+          CidrIp: !Ref VpcCIDR # VPC CIDR
+        - IpProtocol: tcp
+          FromPort: 5473  # All ports
+          ToPort: 5473    # All ports
+          CidrIp: !Ref VpcCIDR # VPC CIDR
+        - IpProtocol: udp
+          FromPort: 5473  # All ports
+          ToPort: 5473    # All ports
+          CidrIp: !Ref VpcCIDR # VPC CIDR
+      SecurityGroupEgress:
+        - IpProtocol: -1     # All protocols
+          CidrIp: 0.0.0.0/0  # All destination IPs
+      Tags:
+        - Key: Name
+          Value: ControlPlaneSecurityGroup
+
+  ControlPlaneKeyPair:
+   Type: 'AWS::EC2::KeyPair'
+   Properties:
+     KeyName: ControlPlaneKeyPair
+     Tags:
+       - Key: Name
+         Value: ControlPlaneKeyPair
+
+  ControlPlanePlacementGroup:
+    Type: AWS::EC2::PlacementGroup
+    Properties:
+      Strategy: spread
+    Tags:
+      - Key: Name
+        Value: ControlPlanePlacementGroup
+  
+  ControlPlaneLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: ControlPlaneLaunchTemplate
+      LaunchTemplateData:
+        ImageId: ami-0261755bbcb8c4a84 # Ubuntu AWS 20.04 ami
+        InstanceType: !Ref ControlPlaneInstanceType
+        IamInstanceProfile:
+          Name: !Ref ControlPlaneInstanceIAMRoleArn
+        KeyName: !GetAtt ControlPlaneKeyPair.KeyName
+        SecurityGroupIds:
+          - !Ref ControlPlaneSecurityGroup  # Reference security group(s) by ID
+        BlockDeviceMappings:
+          - DeviceName: /dev/sda1
+            Ebs:
+              VolumeSize: !Ref ControlPlaneRootVolumeSize 
+              VolumeType: gp2
+              DeleteOnTermination: true
+        Monitoring:
+          Enabled: true
+        Tags:
+          - Key: Name
+            Value: ControlPlaneLaunchTemplate
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            sudo apt update -y && sudo apt upgrade -y
+            sudo apt install -y unzip
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            sudo ./aws/install
+            sudo apt install -y jq
+
+            function is_first_controlplane() {
+            if [ "$(aws ec2 describe-instances \
+                          --query 'Reservations[].Instances[] | [?Tags[?Key==`Name` && Value==`ControlPlane`]]' \
+                          --output json | jq length)" -eq 1 ]; then
+              return 0;
+            fi
+            return 1;
+            }
+
+            if $is_first_controlplane; then
+              aws s3 cp s3://${S3BucketName}/scripts/controlplane/first-controlplane.sh /tmp/controlplane.sh
+              chmod +x /tmp/controlplane.sh
+              bash /tmp/controlplane.sh \
+                ${K8sClusterName} \
+                ${KubernetesVersion} \
+                ${PodNetworkCidr} \
+                ${ClusterServicesNetworkCidr} \
+                ${ClusterDefaultDns} \
+                ${K8sNodesHostnameMode} \
+                ${ControlPlaneAutoScalingGroupName} \
+                ${ControlPlaneAutoScalingGroupDesiredCapacity} \
+                ${S3BucketName}
+            else
+              aws s3 cp s3://${S3BucketName}/scripts/controlplane/joining-controlplane.sh /tmp/controlplane.sh
+              chmod +x /tmp/controlplane.sh
+              bash /tmp/controlplane.sh \
+                ${K8sClusterName} \
+                ${KubernetesVersion} \
+                ${K8sNodesHostnameMode} 
+            fi
+
+  ControlPlaneAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Ref ControlPlaneAutoScalingGroupName 
+      LaunchTemplate:
+        LaunchTemplateName: !Ref ControlPlaneLaunchTemplate
+        Version: !GetAtt ControlPlaneLaunchTemplate.LatestVersionNumber
+      TargetGroupARNs:
+        - !Ref ControlPlaneNlbApiServerTargetGroup
+      MinSize: 1
+      MaxSize: !Ref ControlPlaneAutoScalingGroupMaxSize 
+      DesiredCapacity: 1
+      PlacementGroup: !Ref ControlPlanePlacementGroup
+      HealthCheckGracePeriod: 300
+      Cooldown: 300
+      TerminationPolicies:
+        - OldestInstance 
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+        - !Ref PrivateSubnet3Id
+      DependsOn:
+        - ControlPlaneNlbListener
+      Tags:
+        - Key: Name
+          Value: ControlPlane
+          PropagateAtLaunch: true
+        - Key: kubernetes.io/cluster/${K8sClusterName}
+          Value: owned
+          PropagateAtLaunch: true
+        - Key: k8s.io/cluster-autoscaler/enabled
+          Value: "true"
+          PropagateAtLaunch: false
+        - Key: k8s.io/cluster-autoscaler/${K8sClusterName}
+          Value: "true"
+          PropagateAtLaunch: false
+
+Outputs:
+  ControlPlaneNlbSecurityGroup:
+    Description: Security Group for ControlPlane NLB
+    Value: !Ref ControlPlaneNlbSecurityGroup
+    Export:
+      Name: !Sub `${ProjectName}-${EnvironmentName}-${StackName}-ControlPlaneNlbSecurityGroup`
+
+  ControlPlaneNlb:
+    Description: Network Load Balancer for ControlPlane
+    Value: !Ref ControlPlaneNlb
+    Export:
+      Name: !Sub `${ProjectName}-${EnvironmentName}-${StackName}-ControlPlaneNlb`
+
+  ControlPlaneNlbApiServerTargetGroup:
+    Description: Target Group for ControlPlane NLB
+    Value: !Ref ControlPlaneNlbApiServerTargetGroup
+
+  ControlPlaneNlbListener:
+    Description: Listener for ControlPlane NLB
+    Value: !Ref ControlPlaneNlbListener
+
+  ControlPlaneSecurityGroup:
+    Description: Security Group for Control Plane
+    Value: !Ref ControlPlaneSecurityGroup
+
+  ControlPlaneKeyPair:
+    Description: Key Pair for Control Plane
+    Value: !Ref ControlPlaneKeyPair
+    Export:
+      Name: !Sub `${ProjectName}-${EnvironmentName}-${StackName}-ControlPlaneKeyPair`
+
+  ControlPlanePlacementGroup:
+    Description: Placement Group for Control Plane
+    Value: !Ref ControlPlanePlacementGroup
+
+  ControlPlaneLaunchTemplate:
+    Description: Launch Template for Control Plane
+    Value: !Ref ControlPlaneLaunchTemplate
+    Export:
+      Name: !Sub `${ProjectName}-${EnvironmentName}-${StackName}-ControlPlaneLaunchTemplate`
+
+  ControlPlaneAutoScalingGroup:
+    Description: Auto Scaling Group for Control Plane
+    Value: !Ref ControlPlaneAutoScalingGroup
+    Export:
+      Name: !Sub `${ProjectName}-${EnvironmentName}-${StackName}-ControlPlaneAutoScalingGroup`

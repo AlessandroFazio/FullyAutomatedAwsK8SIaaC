@@ -1,0 +1,347 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: |
+    This template creates the following resources: 
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: Name of the project
+
+  EnvironmentName:
+    Type: String
+    Description: An environment name that will be prefixed to resource names
+
+  StackName:
+    Type: String
+    Description: Name of the stack
+
+  VpcId:
+    Type: String
+    Description: Please enter the VPC ID
+
+  VpcCIDR:
+    Type: String
+    Description: Please enter the IP range (CIDR notation) for this VPC
+
+  PrivateSubnet1Id: 
+    Type: AWS::EC2::Subnet::Id
+    Description: Please enter the private subnet1 ID
+
+  PrivateSubnet2Id: 
+    Type: AWS::EC2::Subnet::Id
+    Description: Please enter the private subnet2 ID
+
+  PrivateSubnet3Id: 
+    Type: AWS::EC2::Subnet::Id
+    Description: Please enter the private subnet3 ID
+  
+  BastionHostSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Please enter the Bastion Host Security Group ID
+
+  K8sClusterName:
+    Type: String
+    Description: The name of the Kubernetes cluster
+
+  K8sNodesHostnameMode:
+    Type: String
+    Description: The hostname mode for the Kubernetes nodes
+  
+  PodsOverlayNetworkCidr:
+    Type: String
+    Description: The CIDR for the pods overlay network
+   
+  KubernetesVersion:
+    Type: String
+    Description: The Kubernetes version
+  
+  WorkerInstanceIAMRoleArn:
+    Type: String
+    Description: The ARN of the IAM role for the worker nodes
+
+  WorkerInstanceType:
+    Type: String
+    Description: The EC2 instance type for the worker nodes
+    
+  WorkerRootVolumeSize:
+    Type: Number
+    Description: The root volume size for the worker nodes
+    
+  WorkerSubnet1AutoScalingGroupMaxSize:
+    Type: Number
+    Description: The maximum size of the worker nodes in the first subnet
+    
+  WorkerSubnet2AutoScalingGroupMaxSize:
+    Type: Number
+    Description: The maximum size of the worker nodes in the second subnet
+    
+  WorkerSubnet3AutoScalingGroupMaxSize:
+    Type: Number
+    Description: The maximum size of the worker nodes in the third subnet
+    
+  S3BucketName:
+    Type: String
+    Description: The name of the S3 bucket where the scripts are stored
+
+Resources:
+  WorkersSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: worker-sg
+      Description: Security Group for Worker Node Instances
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22   # SSH Port
+          ToPort: 22     # SSH Port
+          SourceSecurityGroupId: !Ref BastionHostSecurityGroupId 
+        - IpProtocol: tcp 
+          FromPort: 179  # BGP port for calico 
+          ToPort: 179    # ZooKeeper port
+          CidrIp: !Ref VpcCIDR # VPC CIDR
+        - IpProtocol: udp
+          FromPort: 179  # BGP port for calico
+          ToPort: 179    # ZooKeeper port
+          CidrIp: !Ref VpcCIDR # VPC CIDR
+        - IpProtocol: 4   # Cusotom protocol (IP in IP)  
+          FromPort: -1  # All ports
+          ToPort: -1    # All ports
+          CidrIp: !Ref PodsOverlayNetworkCidr # Pods overlay network CIDR
+        - IpProtocol: tcp
+          FromPort: 10250  # Kubelet port 
+          ToPort: 10250    # Kubelet port
+          CidrIp: !Ref VpcCIDR # VPC CIDR
+        - IpProtocol: tcp
+          FromPort: 2379  # etcd port 
+          ToPort: 2380    # etcd port
+          CidrIp: !Ref VpcCIDR # VPC CIDR
+        - IpProtocol: tcp
+          FromPort: 443  # HTTPS port 
+          ToPort: 443    # HTTPS port
+          CidrIp: 0.0.0.0/0 # All IPs
+        - IpProtocol: tcp
+          FromPort: 4443  # metrics-server port 
+          ToPort: 4443    # metrics-server port
+          CidrIp: !Ref VpcCIDR # VPC CIDR
+        - IpProtocol: icmp
+          FromPort: 8  # All ports
+          ToPort: -1    # All ports
+          CidrIp: !Ref VpcCIDR # VPC CIDR
+        - IpProtocol: tcp
+          FromPort: 5473  # All ports
+          ToPort: 5473    # All ports
+          CidrIp: !Ref VpcCIDR # VPC CIDR
+        - IpProtocol: udp
+          FromPort: 5473  # All ports
+          ToPort: 5473    # All ports
+          CidrIp: !Ref VpcCIDR # VPC CIDR
+        - IpProtocol: tcp
+          FromPort: 14269  # @TODO: find out what is this port for 
+          ToPort: 14269    # @TODO: find out what is this port for
+          CidrIp: 0.0.0.0/0 # All IPs
+        - IpProtocol: tcp
+          FromPort: 30000  # NodePort range start
+          ToPort: 32767    # NodePort range end
+          CidrIp: 0.0.0.0/0 # All IPs
+      SecurityGroupEgress:
+        - IpProtocol: -1     # All protocols
+          CidrIp: 0.0.0.0/0  # All destination IPs
+      Tags:
+        - Key: Name
+          Value: WorkersSecurityGroup
+  
+  WorkerKeyPair:
+   Type: 'AWS::EC2::KeyPair'
+   Properties:
+     KeyName: workerKeyPair
+      Tags:
+        - Key: Name
+          Value: WorkerKeyPair
+
+  WorkerPlacementGroup:
+    Type: AWS::EC2::PlacementGroup
+    Properties:
+      Strategy: cluster
+    Tags:
+      - Key: Name
+        Value: WorkerPlacementGroup
+  
+  WorkerLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: WorkerLaunchTemplate
+      LaunchTemplateData:
+        ImageId: ami-0261755bbcb8c4a84 # Ubuntu AWS 20.04 ami
+        InstanceType: !Ref WorkerInstanceType
+        IamInstanceProfile:
+          Name: !Ref WorkerInstanceIAMRoleArn
+        KeyName: !GetAtt WorkerKeyPair.KeyName
+        SecurityGroupIds:
+          - !Ref WorkerSecurityGroup  # Reference security group(s) by ID
+        BlockDeviceMappings:
+          - DeviceName: /dev/sda1
+            Ebs:
+              VolumeSize: !Ref WorkerRootVolumeSize
+              VolumeType: gp2 # Choose an appropriate volume type (e.g., gp2, io1)
+              DeleteOnTermination: true
+        Monitoring:
+          Enabled: true
+        Tags:
+          - Key: Name
+            Value: WorkerLaunchTemplate
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            sudo apt update -y && sudo apt upgrade -y
+            sudo apt install -y unzip
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            sudo ./aws/install
+
+            aws s3 cp s3://${S3BucketName}/scripts/worker/worker.sh /tmp/worker.sh
+            chmod +x /tmp/worker.sh
+            bash /tmp/worker.sh \
+              ${K8sClusterName} \
+              ${K8sNodesHostnameMode} \
+              ${KubernetesVersion} 
+
+  WorkerSubnet1AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: worker-nodes-subnet1-asg
+      LaunchTemplate:
+        LaunchTemplateName: !Ref WorkerLaunchTemplate
+        Version: !GetAtt WorkerLaunchTemplate.LatestVersionNumber
+      MinSize: 0
+      MaxSize: !Ref WorkerSubnet1AutoScalingGroupMaxSize
+      DesiredCapacity: 0
+      PlacementGroup: !Ref WorkerPlacementGroup
+      HealthCheckGracePeriod: 300
+      Cooldown: 300
+      TerminationPolicies:
+        - OldestInstance 
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1Id
+      DependsOn:
+        - ControlPlaneAutoScalingGroup
+      Tags:
+        - Key: k8s.io/cluster-autoscaler/${K8sClusterName}
+          Value: owned
+          PropagateAtLaunch: false
+        - Key: k8s.io/cluster-autoscaler/enabled
+          Value: "true"
+          PropagateAtLaunch: false
+        - Key: Name
+          Value: AutoScalingGroupWorkerSubnet1
+          PropagateAtLaunch: true
+        - Key: kubernetes.io/cluster/${K8sClusterName}
+          Value: owned
+          PropagateAtLaunch: true
+        - Key: kubernetes.io/role/node
+          Value: "true"
+          PropagateAtLaunch: true
+  
+  WorkerSubnet2AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: worker-nodes-subnet2-asg
+      LaunchTemplate:
+        LaunchTemplateName: !Ref WorkerLaunchTemplate
+        Version: !GetAtt WorkerLaunchTemplate.LatestVersionNumber
+      MinSize: 0
+      MaxSize: !Ref WorkerSubnet2AutoScalingGroupMaxSize
+      DesiredCapacity: 0
+      PlacementGroup: !Ref WorkerPlacementGroup
+      HealthCheckGracePeriod: 300
+      Cooldown: 300
+      TerminationPolicies:
+        - OldestInstance 
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet2Id
+      DependsOn:
+        - ControlPlaneAutoScalingGroup
+      Tags:
+        - Key: k8s.io/cluster-autoscaler/${K8sClusterName}
+          Value: owned
+          PropagateAtLaunch: false
+        - Key: k8s.io/cluster-autoscaler/enabled
+          Value: "true"
+          PropagateAtLaunch: false
+        - Key: Name
+          Value: AutoScalingGroupWorkerSubnet2
+          PropagateAtLaunch: true
+        - Key: kubernetes.io/cluster/${K8sClusterName}
+          Value: owned
+          PropagateAtLaunch: true
+        - Key: kubernetes.io/role/node
+          Value: "true"
+          PropagateAtLaunch: true
+  
+  WorkerSubnet3AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: worker-nodes-subnet3-asg
+      LaunchTemplate:
+        LaunchTemplateName: !Ref WorkerLaunchTemplate
+        Version: !GetAtt WorkerLaunchTemplate.LatestVersionNumber
+      MinSize: 0
+      MaxSize: !Ref WorkerSubnet3AutoScalingGroupMaxSize
+      DesiredCapacity: 0
+      PlacementGroup: !Ref WorkerPlacementGroup
+      HealthCheckGracePeriod: 300
+      Cooldown: 300
+      TerminationPolicies:
+        - OldestInstance 
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet3Id
+      DependsOn:
+        - ControlPlaneAutoScalingGroup
+      Tags:
+        - Key: k8s.io/cluster-autoscaler/${K8sClusterName}
+          Value: owned
+          PropagateAtLaunch: false
+        - Key: k8s.io/cluster-autoscaler/enabled
+          Value: "true"
+          PropagateAtLaunch: false
+        - Key: Name
+          Value: AutoScalingGroupWorkerSubnet3
+          PropagateAtLaunch: true
+        - Key: kubernetes.io/cluster/${K8sClusterName}
+          Value: owned
+          PropagateAtLaunch: true
+        - Key: kubernetes.io/role/node
+          Value: "true"
+          PropagateAtLaunch: true
+
+Outputs:
+  WorkersSecurityGroup:
+    Description: Security Group for Worker Node Instances
+    Value: !Ref WorkersSecurityGroup
+    Export:
+      Name: !Sub '${ProjectName}-${EnvironmentName}-${StackName}-WorkersSecurityGroup'
+
+  WorkerKeyPair:
+    Description: Key Pair for Worker Nodes
+    Value: !Ref WorkerKeyPair
+
+  WorkerPlacementGroup:
+    Description: Placement Group for Worker Nodes
+    Value: !Ref WorkerPlacementGroup
+
+  WorkerLaunchTemplate:
+    Description: Launch Template for Worker Nodes
+    Value: !Ref WorkerLaunchTemplate
+    Export:
+      Name: !Sub '${ProjectName}-${EnvironmentName}-${StackName}-WorkerLaunchTemplate'
+
+  WorkerSubnet1AutoScalingGroup:
+    Description: Auto Scaling Group for Worker Nodes in Subnet 1
+    Value: !Ref WorkerSubnet1AutoScalingGroup
+
+  WorkerSubnet2AutoScalingGroup:
+    Description: Auto Scaling Group for Worker Nodes in Subnet 2
+    Value: !Ref WorkerSubnet2AutoScalingGroup
+
+  WorkerSubnet3AutoScalingGroup:
+    Description: Auto Scaling Group for Worker Nodes in Subnet 3
+    Value: !Ref WorkerSubnet3AutoScalingGroup

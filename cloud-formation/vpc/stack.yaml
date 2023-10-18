@@ -1,0 +1,335 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: |
+  This stack is used for creating the following Resources:
+  1. VPC
+  2. Internet Gateway
+  3. Internet Gateway Attachment
+  4. Public Subnet 1
+  5. Private Subnet 1
+  6. Private Subnet 2
+  7. Private Subnet 3
+  8. Nat Gateway 1
+  9. Nat Gateway 1 EIP
+  10. Public Route Table
+  11. Private Route Table 1
+  12. Private Route Table 2
+  13. Private Route Table 3
+  14. Public Subnet 1 Route Table Association
+  15. Private Subnet 1 Route Table Association
+  16. Private Subnet 2 Route Table Association
+  17. Private Subnet 3 Route Table Association
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: Name of the project
+
+  EnvironmentName:
+    Type: String
+    Description: An environment name that will be prefixed to resource names
+
+  StackName:
+    Type: String
+    Description: Name of the stack
+
+  VpcCIDR:
+    Type: String
+    Description: Please enter the IP range (CIDR notation) for this VPC
+  
+  PublicSubnet1CIDR: 
+      Type: String
+      Description: Please enter the IP range (CIDR notation) for the public subnet in the first Availability Zone
+    
+  PrivateSubnet1CIDR: 
+    Type: String
+    Description: Please enter the IP range (CIDR notation) for the private subnet in the first Availability Zone
+  
+  PrivateSubnet2CIDR: 
+    Type: String
+    Description: Please enter the IP range (CIDR notation) for the private subnet in the second Availability Zone
+  
+  PrivateSubnet3CIDR: 
+    Type: String
+    Description: Please enter the IP range (CIDR notation) for the private subnet in the third Availability Zone
+  
+  AvailabilityZones: 
+    Type: String
+    Description: List of Availability Zones to use (comma-delimited)
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+  
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !Split [ ",", !Ref AvailabilityZones ]]
+      CidrBlock: !Ref PublicSubnet1CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Public Subnet (AZ1)
+        - Key: kubernetes.io/role/elb
+          Value: 1
+        - Key: kubernetes.io/cluster/${K8sClusterName}
+          Value: owned
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !Split [ ",", !Ref AvailabilityZones ]]
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Subnet (AZ1)
+        - Key: kubernetes.io/role/internal-elb
+          Value: 1
+        - Key: kubernetes.io/cluster/${K8sClusterName}
+          Value: owned
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !Split [ ",", !Ref AvailabilityZones ]]
+      CidrBlock: !Ref PrivateSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Subnet (AZ2)
+        - Key: kubernetes.io/role/internal-elb
+          Value: 1
+        - Key: kubernetes.io/cluster/${K8sClusterName}
+          Value: owned
+  
+  PrivateSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [2, !Split [ ",", !Ref AvailabilityZones ]]
+      CidrBlock: !Ref PrivateSubnet3CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Subnet (AZ3)
+        - Key: kubernetes.io/role/internal-elb
+          Value: 1
+        - Key: kubernetes.io/cluster/${K8sClusterName}
+          Value: owned
+  
+  NatGateway1EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Nat Gateway 1 EIP
+
+  NatGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway1EIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Nat Gateway 1
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Public Routes
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Routes (AZ1)
+
+  DefaultPrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet1
+
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Routes (AZ2)
+  
+  DefaultPrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      SubnetId: !Ref PrivateSubnet2
+  
+  PrivateRouteTable3:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Routes (AZ3)
+
+  DefaultPrivateRoute3:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable3
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+
+  PrivateSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable3
+      SubnetId: !Ref PrivateSubnet3
+
+Outputs:
+  VpcId:
+    Description: VPC ID
+    Value: !Ref VPC
+    Export:
+      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-VpcId
+
+  VpcCIDR:
+    Description: VPC CIDR
+    Value: !Ref VpcCIDR
+    Export:
+      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-VpcCIDR
+  
+  PublicSubnet1Id:
+    Description: Public Subnet 1 ID
+    Value: !Ref PublicSubnet1
+    Export:
+      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-PublicSubnet1Id
+  
+  PrivateSubnet1Id:
+    Description: Private Subnet 1 ID
+    Value: !Ref PrivateSubnet1
+    Export:
+      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-PrivateSubnet1Id
+  
+  PrivateSubnet2Id:
+    Description: Private Subnet 2 ID
+    Value: !Ref PrivateSubnet2
+    Export:
+      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-PrivateSubnet2Id
+  
+  PrivateSubnet3Id:
+    Description: Private Subnet 3 ID
+    Value: !Ref PrivateSubnet3
+    Export:
+      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-PrivateSubnet3Id
+  
+  NatGateway1Id:
+    Description: Nat Gateway 1 ID
+    Value: !Ref NatGateway1
+    Export:
+      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-NatGateway1Id
+  
+  NatGateway1EIP:
+    Description: Nat Gateway 1 EIP
+    Value: !Ref NatGateway1EIP
+    Export:
+      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-NatGateway1EIP
+  
+  PublicRouteTableId:
+    Description: Public Route Table ID
+    Value: !Ref PublicRouteTable
+    Export:
+      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-PublicRouteTableId
+  
+  PrivateRouteTable1Id:
+    Description: Private Route Table 1 ID
+    Value: !Ref PrivateRouteTable1
+    Export:
+      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-PrivateRouteTable1Id
+  
+  PrivateRouteTable2Id:
+    Description: Private Route Table 2 ID
+    Value: !Ref PrivateRouteTable2
+    Export:
+      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-PrivateRouteTable2Id
+  
+  PrivateRouteTable3Id:
+    Description: Private Route Table 3 ID
+    Value: !Ref PrivateRouteTable3
+    Export:
+      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-PrivateRouteTable3Id
+  
+  PublicSubnet1RouteTableAssociationId:
+    Description: Public Subnet 1 Route Table Association ID
+    Value: !Ref PublicSubnet1RouteTableAssociation
+  
+  PrivateSubnet1RouteTableAssociationId:
+    Description: Private Subnet 1 Route Table Association ID
+    Value: !Ref PrivateSubnet1RouteTableAssociation
+  
+  PrivateSubnet2RouteTableAssociationId:
+    Description: Private Subnet 2 Route Table Association ID
+    Value: !Ref PrivateSubnet2RouteTableAssociation
+
+  PrivateSubnet3RouteTableAssociationId:
+    Description: Private Subnet 3 Route Table Association ID
+    Value: !Ref PrivateSubnet3RouteTableAssociation
+
+

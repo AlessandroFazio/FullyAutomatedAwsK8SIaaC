@@ -308,7 +308,7 @@ Resources:
   BastionHostKeyPair:
    Type: 'AWS::EC2::KeyPair'
    Properties:
-     KeyName: !Ref BastionHostKeyPairName
+     KeyName: bastionHostKeys
   
   BastionHostSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -325,7 +325,7 @@ Resources:
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
-          CidrIp:
+          CidrIp: !GetAtt VPC.CidrBlock
 
   BastionHostInstance:
     Type: AWS::EC2::Instance
@@ -726,7 +726,7 @@ Resources:
   WorkerAwsCloudProviderPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
-      PolicyName: WorkerAwsCloudProviderPolicy
+      ManagedPolicyName: WorkerAwsCloudProviderPolicy
       Description: Policy for the WorkerAwsCloudProvider
       PolicyDocument:
         Version: "2012-10-17"
@@ -745,30 +745,30 @@ Resources:
             Resource: "*"
   
   ClusterAutoScalingPolicy:
-  Type: AWS::IAM::ManagedPolicy
-  Properties:
-    ManagedPolicyName: YourAutoScalingPolicyName
-    PolicyDocument:
-      Version: '2012-10-17'
-      Statement:
-        - Effect: Allow
-          Action:
-            - autoscaling:DescribeAutoScalingGroups
-            - autoscaling:DescribeAutoScalingInstances
-            - autoscaling:DescribeLaunchConfigurations
-            - autoscaling:DescribeScalingActivities
-            - autoscaling:DescribeTags
-            - ec2:DescribeInstanceTypes
-            - ec2:DescribeLaunchTemplateVersions
-          Resource: '*'
-        - Effect: Allow
-          Action:
-            - autoscaling:SetDesiredCapacity
-            - autoscaling:TerminateInstanceInAutoScalingGroup
-            - ec2:DescribeImages
-            - ec2:GetInstanceTypesFromInstanceRequirements
-            - eks:DescribeNodegroup
-          Resource: '*'
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: YourAutoScalingPolicyName
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - autoscaling:DescribeAutoScalingGroups
+              - autoscaling:DescribeAutoScalingInstances
+              - autoscaling:DescribeLaunchConfigurations
+              - autoscaling:DescribeScalingActivities
+              - autoscaling:DescribeTags
+              - ec2:DescribeInstanceTypes
+              - ec2:DescribeLaunchTemplateVersions
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - autoscaling:SetDesiredCapacity
+              - autoscaling:TerminateInstanceInAutoScalingGroup
+              - ec2:DescribeImages
+              - ec2:GetInstanceTypesFromInstanceRequirements
+              - eks:DescribeNodegroup
+            Resource: '*'
   
   KubernetesClusterPutSSMParameterStoreAccessPolicy:
     Type: "AWS::IAM::Policy"
