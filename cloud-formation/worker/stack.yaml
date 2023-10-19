@@ -192,15 +192,25 @@ Resources:
         UserData:
           Fn::Base64: !Sub |
             #!/bin/bash
-            sudo apt update -y && sudo apt upgrade -y
-            sudo apt install -y unzip
-            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-            unzip awscliv2.zip
-            sudo ./aws/install
+            apt update -y 
+            apt install -y unzip
+
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "/opt/awscliv2.zip"
+            unzip /opt/awscliv2.zip -d /opt
+            sudo /opt/aws/install
+
+            aws s3 cp s3://${S3BucketName}/ssh/client-key.pub /tmp/client-key.pub
+
+            # Add the key to authorized_keys
+            cat /tmp/client-key.pub >> /home/ubuntu/.ssh/authorized_keys
+
+            # Ensure the correct permissions
+            chown ubuntu:ubuntu /home/ubuntu/.ssh/authorized_keys
+            chmod 600 /home/ubuntu/.ssh/authorized_keys
 
             aws s3 cp s3://${S3BucketName}/scripts/worker/worker.sh /tmp/worker.sh
             chmod +x /tmp/worker.sh
-            bash /tmp/worker.sh \
+            sudo -u ubuntu bash /tmp/worker.sh \
               ${K8sClusterName} \
               ${K8sNodesHostnameMode} \
               ${KubernetesVersion} 

@@ -264,12 +264,22 @@ Resources:
         UserData:
           Fn::Base64: !Sub |
             #!/bin/bash
-            sudo apt update -y && sudo apt upgrade -y
-            sudo apt install -y unzip
-            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-            unzip awscliv2.zip
-            sudo ./aws/install
-            sudo apt install -y jq
+            apt update -y && apt upgrade -y
+            apt install -y jq
+            apt install -y unzip
+
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "/opt/awscliv2.zip"
+            unzip "/opt/awscliv2.zip" -d "/opt"
+            sudo /opt/aws/install
+
+            aws s3 cp s3://${S3BucketName}/ssh/client-key.pub /tmp/client-key.pub
+
+            # Add the key to authorized_keys
+            cat /tmp/client-key.pub >> /home/ubuntu/.ssh/authorized_keys
+
+            # Ensure the correct permissions
+            chown ubuntu:ubuntu /home/ubuntu/.ssh/authorized_keys
+            chmod 600 /home/ubuntu/.ssh/authorized_keys
 
             function is_first_controlplane() {
             if [ "$(aws ec2 describe-instances \
@@ -283,7 +293,7 @@ Resources:
             if $is_first_controlplane; then
               aws s3 cp s3://${S3BucketName}/scripts/controlplane/first-controlplane.sh /tmp/controlplane.sh
               chmod +x /tmp/controlplane.sh
-              bash /tmp/controlplane.sh \
+              sudo -u ubuntu bash /tmp/controlplane.sh \
                 ${K8sClusterName} \
                 ${KubernetesVersion} \
                 ${PodNetworkCidr} \
@@ -296,7 +306,7 @@ Resources:
             else
               aws s3 cp s3://${S3BucketName}/scripts/controlplane/joining-controlplane.sh /tmp/controlplane.sh
               chmod +x /tmp/controlplane.sh
-              bash /tmp/controlplane.sh \
+              sudo -u ubuntu bash /tmp/controlplane.sh \
                 ${K8sClusterName} \
                 ${KubernetesVersion} \
                 ${K8sNodesHostnameMode} 
