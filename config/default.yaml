@@ -1,0 +1,17 @@
+project-name: my-project
+environment: dev
+logging:
+  level: INFO
+  format: "%(asctime)s - %(levelname)s - %(message)s"
+  handlers:
+    - console
+    - file
+cloud-formation:
+  StackName: main
+  Parameters:
+
+# Add parameters to override the default values in the template
+
+
+
+

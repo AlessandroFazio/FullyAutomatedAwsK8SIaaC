@@ -47,17 +47,15 @@ def get_caller_identity(client) -> Dict[str, str]:
         raise Exception(f"An error occurred: {e}")
     
 
-def create_stack(client, stack_name: str, main_template_URL, stack_parameters) -> None:
+def create_stack(client, config) -> None:
     """Start CloudFormation."""
     try:
-        client.create_stack(StackName=stack_name, 
-                            TemplateURL=main_template_URL, 
-                            Parameters=stack_parameters)
-        logging.info(f"Started CloudFormation with stack name: {stack_name} from template URL: {main_template_URL}")
+        client.create_stack(StackName=config["StackName"],
+                            TemplateURL=config["TemplateURL"],
+                            Parameters=config["Parameters"])
+        logging.info(f"Started CloudFormation with: \
+                     \n -stack name: {config['StackName']} \
+                     \n -from template URL: {config['TemplateURL']}")
     except Exception as e:
         logging.error(f"An error occurred: {e}")
         exit(1)
-
-
-def parse_stack_parameters() -> Dict[Any, Any]:
-    
