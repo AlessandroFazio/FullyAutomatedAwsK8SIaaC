@@ -234,7 +234,7 @@ Resources:
   VpcStack:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formations/vpc/stack.yaml
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formation/vpc/stack.yaml
       Parameters:
         ProjectName: !Ref ProjectName
         EnvironmentName: !Ref EnvironmentName
@@ -251,7 +251,7 @@ Resources:
     DependsOn:
       - VpcStack
     Properties:
-      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formations/bastion-host/stack.yaml
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formation/bastion-host/stack.yaml
       Parameters:
         ProjectName: !Ref ProjectName
         EnvironmentName: !Ref EnvironmentName
@@ -271,7 +271,7 @@ Resources:
     DependsOn:
       - VpcStack
     Properties:
-      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formations/policy-role/stack.yaml
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formation/policy-role/stack.yaml
       Parameters:
         ProjectName: !Ref ProjectName
         EnvironmentName: !Ref EnvironmentName
@@ -286,7 +286,7 @@ Resources:
       - BastionHostStack
       - PolicyRoleStack
     Properties:
-      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formations/controlplane/stack.yaml
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formation/controlplane/stack.yaml
       Parameters:
         ProjectName: !Ref ProjectName
         EnvironmentName: !Ref EnvironmentName
@@ -328,7 +328,7 @@ Resources:
         - PolicyRoleStack
         - ControlPlaneStack
       Properties:
-        TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formations/worker/stack.yaml
+        TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formation/worker/stack.yaml
         Parameters:
           ProjectName: !Ref ProjectName
           EnvironmentName: !Ref EnvironmentName
