@@ -14,51 +14,77 @@ Parameters:
     Type: String
     Description: Name of the project
     Default: k8s-self-managed
+    MinLength: 1
+    MaxLength: 20
 
   EnvironmentName:
     Description: An environment name that is prefixed to resource names
     Type: String
     Default: dev
+    MinLength: 1
+    MaxLength: 20
 
   StackName:
     Description: Name of the stack
     Type: String
     Default: k8s-self-managed
+    MinLength: 1
+    MaxLength: 20
   
   VpcStackName:
     Description: Please enter the name for the VpcStackName
     Type: String
     Default: VPC
+    MinLength: 1
+    MaxLength: 20
   
   BastionHostStackName:
     Description: Please enter the name for the BastionHostStackName
     Type: String
-    Default: BastionHost  
+    Default: BastionHost 
+    MinLength: 1
+    MaxLength: 20 
   
   PolicyRoleStackName:
     Description: Please enter the name for the PolicyRoleStackName
     Type: String
     Default: PolicyRole
+    MinLength: 1
+    MaxLength: 20
 
   ControlPlaneStackName:
     Description: Please enter the name for the ControlPlaneStackName
     Type: String
     Default: ControlPlane
+    MinLength: 1
+    MaxLength: 20
 
   WorkerStackName:
     Description: Please enter the name for the WorkerStackName
     Type: String
     Default: Worker
+    MinLength: 1
+    MaxLength: 20
 
   VpcCIDR:
     Description: Please enter the IP range (CIDR notation) for this VPC
     Type: String
     Default: 10.192.0.0/16
+    AllowedPattern:  >
+      ^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
+      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
+      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
+      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(3[0-2]|[1-2]?[0-9])$
   
   HomeInternetRouterIp: 
     Description: Home Internet Router IP Address 
     Type: String
     Default: 79.31.220.40/32
+    AllowedPattern: >
+      ^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
+      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
+      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
+      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(3[0-2]|[1-2]?[0-9])$
   
   AvailabilityZones:
     Description: List of Availability Zones to use (comma-delimited)
@@ -69,56 +95,95 @@ Parameters:
     Description: Please enter the IP range (CIDR notation) for the public subnet in the first Availability Zone
     Type: String
     Default: 10.192.0.0/20
+    AllowedPattern: >
+      ^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
+      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
+      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
+      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(3[0-2]|[1-2]?[0-9])$
 
   PrivateSubnet1CIDR:
     Description: Please enter the IP range (CIDR notation) for the private subnet in the first Availability Zone
     Type: String
     Default: 10.192.16.0/20
+    AllowedPattern: >
+      ^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
+      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
+      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
+      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(3[0-2]|[1-2]?[0-9])$
 
   PrivateSubnet2CIDR:
     Description: Please enter the IP range (CIDR notation) for the private subnet in the second Availability Zone
     Type: String
     Default: 10.192.32.0/20
+    AllowedPattern: >
+      ^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
+      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
+      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
+      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(3[0-2]|[1-2]?[0-9])$
   
   PrivateSubnet3CIDR:
     Description: Please enter the IP range (CIDR notation) for the private subnet in the third Availability Zone
     Type: String
     Default: 10.192.48.0/20
+    AllowedPattern: >
+      ^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
+      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
+      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
+      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(3[0-2]|[1-2]?[0-9])$
   
   S3BucketName:
     Description: Please enter the name for the S3BucketName
     Type: String
     Default: my-k8s-cluster-bucket
+    MinLength: 5
+    MaxLength: 75
   
   BastionHostInstanceType:
     Description: Please enter Bastion Host Instance Type
     Type: String
     Default: t2.micro
   
+  BastionHostRootVolumeSize:
+    Description: Please enter Bastion Host Root Volume Size
+    Type: Number
+    Default: 8
+    MinValue: 8
+    MaxValue: 100
+  
   K8sClusterName:
     Description: Please enter the name for the K8sClusterName
     Type: String
     Default: my-k8s
+    MinLength: 1
+    MaxLength: 20
 
   K8sNodesHostnameMode:
     Description: Please enter the name for the K8sNodesHostnameMode
     Type: String
     Default: instance-id
+    AllowedValues:
+      - instance-id
+      - private-dns
   
   ControlPlaneAutoScalingGroupName:
     Description: Please enter the name for the ControlPlaneAsgName
     Type: String
     Default: controlplane-asg
+    MinLength: 1
+    MaxLength: 20
   
   ControlPlaneAutoScalingGroupDesiredCapacity:
     Description: Please enter the desired capacity for the ControlPlaneAsgName
     Type: Number
     Default: 3
+    MinValue: 1
 
   ControlPlaneAutoScalingGroupMaxSize:
     Description: Please enter the max size for the ControlPlaneAsgName
     Type: Number
     Default: 3
+    MinValue: 1
+    MaxValue: 10
   
   ControlPlaneInstanceType:
     Description: Please enter the instance type for the ControlPlaneAsgName
@@ -129,6 +194,8 @@ Parameters:
     Description: Please enter the root volume size for the ControlPlaneAsgName
     Type: Number
     Default: 16
+    MinValue: 16
+    MaxValue: 100
 
   WorkerInstanceType:
     Description: Please enter the instance type for the WorkerAsgName
@@ -139,21 +206,29 @@ Parameters:
     Description: Please enter the root volume size for the WorkerAsgName
     Type: Number
     Default: 16
+    MinValue: 16
+    MaxValue: 100
   
   WorkerSubnet1AutoScalingGroupMaxSize:
     Description: Please enter the max size for the WorkerSubnet1AutoScalingGroup
     Type: Number
     Default: 3
+    MinValue: 1
+    MaxValue: 100
   
   WorkerSubnet2AutoScalingGroupMaxSize:
     Description: Please enter the max size for the WorkerSubnet2AutoScalingGroup
     Type: Number
     Default: 3
+    MinValue: 1
+    MaxValue: 100
   
   WorkerSubnet3AutoScalingGroupMaxSize:
     Description: Please enter the max size for the WorkerSubnet3AutoScalingGroup
     Type: Number
     Default: 3
+    MinValue: 1
+    MaxValue: 100
 
 Resources:
   VpcStack:
@@ -181,6 +256,8 @@ Resources:
         ProjectName: !Ref ProjectName
         EnvironmentName: !Ref EnvironmentName
         StackName: !Ref BastionHostStackName
+        BastionHostInstanceType: !Ref BastionHostInstanceType
+        BastionHostRootVolumeSize: !Ref BastionHostRootVolumeSize
         VpcId: !ImportValue
           Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-VpcId"
         VpcCIDR: !ImportValue
@@ -188,7 +265,6 @@ Resources:
         PublicSubnet1Id: !ImportValue
           Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-PublicSubnet1Id"
         HomeInternetRouterIp: !Ref HomeInternetRouterIp
-        BastionHostInstanceType: !Ref BastionHostInstanceType
     
   PolicyRoleStack:
     Type: AWS::CloudFormation::Stack
@@ -250,6 +326,7 @@ Resources:
         - VpcStack
         - BastionHostStack
         - PolicyRoleStack
+        - ControlPlaneStack
       Properties:
         TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formations/worker/stack.yaml
         Parameters:

@@ -348,6 +348,8 @@ Resources:
         - Key: k8s.io/cluster-autoscaler/${K8sClusterName}
           Value: "true"
           PropagateAtLaunch: false
+        - Key: k8s.io/cluster-autoscaler/node-template/taint/node-role.kubernetes.io/controlplane::NoSchedule
+          PropagateAtLaunch: true
 
 Outputs:
   ControlPlaneNlbSecurityGroup:

@@ -217,7 +217,8 @@ echo "alias ka='kubectl apply -f'" >> .bashrc
 echo "alias kr='kubectl replace -f'" >> .bashrc
 echo "alias kd='kubectl delete -f'" >> .bashrc
 
-wget https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml -O metrics-server.yaml
+aws cp s3://${S3_BUCKET}/scripts/addons/metrics-server.yaml /tmp/metrics-server.yaml
+# kubectl apply -f /tmp/metrics-server.yaml TODO: check manifest if it's working
 
 sudo mkdir -p /etc/NetworkManager/conf.d/
 sudo bash -c "cat <<EOF | tee /etc/NetworkManager/conf.d/calico.conf
@@ -232,7 +233,7 @@ mkdir ~/calico
 wget https://raw.githubusercontent.com/projectcalico/calico/v3.26.1/manifests/tigera-operator.yaml -O ~/calico/tigera-operator.yaml
 kubectl create -f ~/calico/tigera-operator.yaml
 
-aws s3 cp s3://${S3_BUCKET}/scripts/add-ons/calico-network.sh /tmp/calico.sh
+aws s3 cp s3://${S3_BUCKET}/scripts/addons/calico-network.sh /tmp/calico.sh
 chmod +x /tmp/calico.sh
 bash /tmp/calico.sh "${K8S_POD_NETWORK_CIDR}"
 kubectl create -f ~/calico/custom-resources.yaml
@@ -293,11 +294,11 @@ function get_region() {
   echo "${response}"
 }
 
-KUBECONFIG_OBJECT="/files/config/kubeconfig"
+KUBECONFIG_OBJECT="/config/controlplane/kubeconfig"
 aws s3 cp ~/.kube/config s3://${S3_BUCKET}/${KUBECONFIG_OBJECT}
 
 REGION=$(get_region)
-aws s3 cp s3://${S3_BUCKET}/scripts/k8s-drainer-bootstrap.sh /tmp/k8s-drainer-bootstrap.sh
+aws s3 cp s3://${S3_BUCKET}/scripts/addons/k8s-drainer-bootstrap.sh /tmp/k8s-drainer-bootstrap.sh
 chmod +x /tmp/k8s-drainer-bootstrap.sh
 
 for asg_name in $(retrieve_asg_names); do
@@ -314,7 +315,7 @@ aws autoscaling set-desired-capacity \
   --desired-capacity "${CONTROLPLANE_ASG_DESIRED_CAPACITY}" 
 
 mkdir -p ~/cluster-autoscaler/multi-asg
-aws s3 cp://${S3_BUCKET}/scripts/add-ons/cluster-autoscaler.sh /tmp/cluster-autoscaler.sh
+aws s3 cp://${S3_BUCKET}/scripts/addons/cluster-autoscaler.sh /tmp/cluster-autoscaler.sh
 chmod +x /tmp/cluster-autoscaler.sh
 bash /tmp/cluster-autoscaler.sh "${K8S_CLUSTER_NAME}"
 kubectl apply -f ~/cluster-autoscaler/multi-asg/cluster-autoscaler.yaml
