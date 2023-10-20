@@ -1,16 +1,21 @@
 from typing import Dict
-import logging
 import os
-from typing import Dict, Any
+from typing import Dict
+from utils.config_utils import get_logger
+
+LOGGER = get_logger()
 
 def create_s3_bucket(client, bucket_name: str, region: str) -> None:
     """Create S3 bucket."""
     try:
-        client.create_bucket(Bucket=bucket_name, 
-                             CreateBucketConfiguration={'LocationConstraint': region})
-        logging.info(f"Created S3 Bucket with name: {bucket_name}")
+        if(region == "us-east-1"):
+            client.create_bucket(Bucket=bucket_name)
+        else:
+            client.create_bucket(Bucket=bucket_name, 
+                                CreateBucketConfiguration={'LocationConstraint': region})
+        LOGGER.info(f"Created S3 Bucket with name: {bucket_name}")
     except Exception as e:
-        logging.error(f"An error occurred: {e}")
+        LOGGER.error(f"An error occurred: {e}")
         exit(1)
 
 
@@ -18,9 +23,9 @@ def upload_file_to_s3(client, bucket_name: str, file_path: str, file_key: str) -
     """Upload file to S3 bucket."""
     try:
         client.upload_file(file_path, bucket_name, file_key)
-        logging.info(f"Uploaded file to S3 Bucket with name: {bucket_name}")
+        LOGGER.info(f"Uploaded file to S3 Bucket ({bucket_name}) with key: {file_key}")
     except Exception as e:
-        logging.error(f"An error occurred: {e}")
+        LOGGER.error(f"An error occurred: {e}")
         exit(1)
 
 
@@ -39,11 +44,11 @@ def get_caller_identity(client) -> Dict[str, str]:
     try:
         response = client.get_caller_identity()
         if(response is None):
-            logging.error("Response from aws sts caller identity is None.")
+            LOGGER.error("Response from aws sts caller identity is None.")
             raise Exception("Response is None.")
         return response
     except Exception as e:
-        logging.error(f"An error occurred: {e}")
+        LOGGER.error(f"An error occurred: {e}")
         raise Exception(f"An error occurred: {e}")
     
 
@@ -53,9 +58,10 @@ def create_stack(client, config) -> None:
         client.create_stack(StackName=config["StackName"],
                             TemplateURL=config["TemplateURL"],
                             Parameters=config["Parameters"])
-        logging.info(f"Started CloudFormation with: \
+        LOGGER.info(f"Started CloudFormation with: \
                      \n -stack name: {config['StackName']} \
                      \n -from template URL: {config['TemplateURL']}")
     except Exception as e:
-        logging.error(f"An error occurred: {e}")
+        
+        LOGGER.error(f"An error occurred: {e}")
         exit(1)

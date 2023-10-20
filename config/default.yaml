@@ -1,16 +1,38 @@
-project-name: my-project
-environment: dev
+project:
+  name: my-project
+  environment: 
+    name: dev
+    region: us-east-1
 logging:
-  level: INFO
-  format: "%(asctime)s - %(levelname)s - %(message)s"
+  version: 1
+  loggers:
+    root:
+      level: INFO
+      handlers: [console]
   handlers:
-    - console
-    - file
-cloud-formation:
+    console:
+      class: logging.StreamHandler
+      level: INFO
+      formatter: generic
+      stream: ext://sys.stdout
+  formatters:
+    generic:
+      format: '%(asctime)s %(levelname)-8s %(name)-15s %(message)s'
+      datefmt: '%Y-%m-%d %H:%M:%S'
+
+cloudformation:
   StackName: main
   Parameters:
-
-# Add parameters to override the default values in the template
+  # Add parameters to override the default values in the template
+  # The auto-configuration will use project and environment name you specified above
+  # and will set them here for you
+  #  ---
+  #  ProjectName: set from above
+  #  Environment: set from above
+  #  ---
+  #  VpcId: set here
+  #  SubnetIds: set here
+  #  ...
 
 
 

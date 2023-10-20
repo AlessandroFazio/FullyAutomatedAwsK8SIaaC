@@ -23,6 +23,52 @@ Parameters:
     Default: dev
     MinLength: 1
     MaxLength: 20
+  
+  S3BucketName:
+    Description: Please enter the name for the S3BucketName
+    Type: String
+    Default: my-k8s-cluster-bucket
+    MinLength: 5
+    MaxLength: 75
+
+  K8sClusterName:
+    Description: Please enter the name for the K8sClusterName
+    Type: String
+    Default: my-k8s
+    MinLength: 1
+    MaxLength: 20
+
+  K8sNodesHostnameMode:
+    Description: Please enter the name for the K8sNodesHostnameMode
+    Type: String
+    Default: instance-id
+    AllowedValues:
+      - instance-id
+      - private-dns
+  
+  KubernetesVersion:
+    Description: Please enter the Kubernetes version
+    Type: Number
+    Default: 1.27
+    MinValue: 1.25
+    MaxValue: 1.28
+  
+  PodsOverlayNetworkCidr:
+    Description: Please enter the Pods Overlay Network CIDR
+    Type: String
+    Default: 192.168.0.0/16
+    AllowedPattern: ^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.0\/(3[0-2]|[1-2]?[0-9])$
+  
+  ClusterServicesNetworkCidr:
+    Description: Please enter the Cluster Services Network CIDR
+    Type: String
+    Default: 10.196.0.0/12
+    AllowedPattern: ^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.0\.0\/(3[0-2]|[1-2]?[0-9])$
+  
+  ClusterDefaultDns:
+    Description: Please enter the Cluster Default DNS
+    Type: String
+    Default: cluster.local
 
   StackName:
     Description: Name of the stack
@@ -69,22 +115,14 @@ Parameters:
   VpcCIDR:
     Description: Please enter the IP range (CIDR notation) for this VPC
     Type: String
-    Default: 10.192.0.0/16
-    AllowedPattern:  >
-      ^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
-      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
-      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
-      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(3[0-2]|[1-2]?[0-9])$
+    Default: 172.0.0.0/16
+    AllowedPattern: ^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(3[0-2]|[1-2]?[0-9])$
   
   HomeInternetRouterIp: 
     Description: Home Internet Router IP Address 
     Type: String
-    Default: 79.31.220.40/32
-    AllowedPattern: >
-      ^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
-      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
-      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
-      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(3[0-2]|[1-2]?[0-9])$
+    Default: 79.21.217.199/32
+    AllowedPattern: ^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(3[0-2]|[1-2]?[0-9])$
   
   AvailabilityZones:
     Description: List of Availability Zones to use (comma-delimited)
@@ -94,49 +132,26 @@ Parameters:
   PublicSubnet1CIDR:
     Description: Please enter the IP range (CIDR notation) for the public subnet in the first Availability Zone
     Type: String
-    Default: 10.192.0.0/20
-    AllowedPattern: >
-      ^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
-      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
-      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
-      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(3[0-2]|[1-2]?[0-9])$
+    Default: 172.0.0.0/20
+    AllowedPattern: ^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(3[0-2]|[1-2]?[0-9])$
 
   PrivateSubnet1CIDR:
     Description: Please enter the IP range (CIDR notation) for the private subnet in the first Availability Zone
     Type: String
-    Default: 10.192.16.0/20
-    AllowedPattern: >
-      ^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
-      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
-      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
-      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(3[0-2]|[1-2]?[0-9])$
+    Default: 172.0.16.0/20
+    AllowedPattern: ^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(3[0-2]|[1-2]?[0-9])$
 
   PrivateSubnet2CIDR:
     Description: Please enter the IP range (CIDR notation) for the private subnet in the second Availability Zone
     Type: String
-    Default: 10.192.32.0/20
-    AllowedPattern: >
-      ^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
-      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
-      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
-      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(3[0-2]|[1-2]?[0-9])$
+    Default: 172.0.32.0/20
+    AllowedPattern: ^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(3[0-2]|[1-2]?[0-9])$
   
   PrivateSubnet3CIDR:
     Description: Please enter the IP range (CIDR notation) for the private subnet in the third Availability Zone
     Type: String
-    Default: 10.192.48.0/20
-    AllowedPattern: >
-      ^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
-      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
-      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.
-      (25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(3[0-2]|[1-2]?[0-9])$
-  
-  S3BucketName:
-    Description: Please enter the name for the S3BucketName
-    Type: String
-    Default: my-k8s-cluster-bucket
-    MinLength: 5
-    MaxLength: 75
+    Default: 172.0.48.0/20
+    AllowedPattern: ^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/(3[0-2]|[1-2]?[0-9])$
   
   BastionHostInstanceType:
     Description: Please enter Bastion Host Instance Type
@@ -149,21 +164,6 @@ Parameters:
     Default: 8
     MinValue: 8
     MaxValue: 100
-  
-  K8sClusterName:
-    Description: Please enter the name for the K8sClusterName
-    Type: String
-    Default: my-k8s
-    MinLength: 1
-    MaxLength: 20
-
-  K8sNodesHostnameMode:
-    Description: Please enter the name for the K8sNodesHostnameMode
-    Type: String
-    Default: instance-id
-    AllowedValues:
-      - instance-id
-      - private-dns
   
   ControlPlaneAutoScalingGroupName:
     Description: Please enter the name for the ControlPlaneAsgName
