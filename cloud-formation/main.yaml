@@ -246,30 +246,8 @@ Resources:
         PrivateSubnet3CIDR: !Ref PrivateSubnet3CIDR
         AvailabilityZones: !Ref AvailabilityZones
   
-  BastionHostStack:
-    Type: AWS::CloudFormation::Stack
-    DependsOn:
-      - VpcStack
-    Properties:
-      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formation/bastion-host/stack.yaml
-      Parameters:
-        ProjectName: !Ref ProjectName
-        EnvironmentName: !Ref EnvironmentName
-        StackName: !Ref BastionHostStackName
-        BastionHostInstanceType: !Ref BastionHostInstanceType
-        BastionHostRootVolumeSize: !Ref BastionHostRootVolumeSize
-        VpcId: !ImportValue
-          Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-VpcId"
-        VpcCIDR: !ImportValue
-          Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-VpcCIDR"
-        PublicSubnet1Id: !ImportValue
-          Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-PublicSubnet1Id"
-        HomeInternetRouterIp: !Ref HomeInternetRouterIp
-    
   PolicyRoleStack:
     Type: AWS::CloudFormation::Stack
-    DependsOn:
-      - VpcStack
     Properties:
       TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formation/policy-role/stack.yaml
       Parameters:
@@ -278,6 +256,26 @@ Resources:
         StackName: !Ref PolicyRoleStackName
         S3BucketName: !Ref S3BucketName
         K8sClusterName: !Ref K8sClusterName
+  
+  BastionHostStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - VpcStack
+      - PolicyRoleStack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formation/bastion-host/stack.yaml
+      Parameters:
+        ProjectName: !Ref ProjectName
+        EnvironmentName: !Ref EnvironmentName
+        StackName: !Ref BastionHostStackName
+        S3BucketName: !Ref S3BucketName
+        BastionHostInstanceType: !Ref BastionHostInstanceType
+        BastionHostRootVolumeSize: !Ref BastionHostRootVolumeSize
+        BastionHostInstanceProfileArn: !GetAtt PolicyRoleStack.Outputs.BastionHostInstanceProfileArn
+        VpcId: !GetAtt VpcStack.Outputs.VpcId
+        VpcCIDR: !GetAtt VpcStack.Outputs.VpcCIDR
+        PublicSubnet1Id: !GetAtt VpcStack.Outputs.PublicSubnet1Id
+        HomeInternetRouterIp: !Ref HomeInternetRouterIp
   
   ControlPlaneStack:
     Type: AWS::CloudFormation::Stack
@@ -291,28 +289,20 @@ Resources:
         ProjectName: !Ref ProjectName
         EnvironmentName: !Ref EnvironmentName
         StackName: !Ref ControlPlaneStackName
-        VpcId: !ImportValue
-          Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-VpcId"
-        VpcCIDR: !ImportValue
-          Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-VpcCIDR"
-        PublicSubnet1Id: !ImportValue
-          Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-PublicSubnet1Id"
-        PrivateSubnet1Id: !ImportValue
-          Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-PrivateSubnet1Id"
-        PrivateSubnet2Id: !ImportValue
-          Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-PrivateSubnet2Id"
-        PrivateSubnet3Id: !ImportValue
-          Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-PrivateSubnet3Id"
-        BastionHostSecurityGroupId: !ImportValue
-          Fn::Sub: "${ProjectName}-${EnvironmentName}-${BastionHostStackName}-BastionHostSecurityGroupId"
+        VpcId: !GetAtt VpcStack.Outputs.VpcId
+        VpcCIDR: !GetAtt VpcStack.Outputs.VpcCIDR
+        PublicSubnet1Id: !GetAtt VpcStack.Outputs.PublicSubnet1Id
+        PrivateSubnet1Id: !GetAtt VpcStack.Outputs.PrivateSubnet1Id
+        PrivateSubnet2Id: !GetAtt VpcStack.Outputs.PrivateSubnet2Id
+        PrivateSubnet3Id: !GetAtt VpcStack.Outputs.PrivateSubnet3Id
+        BastionHostSecurityGroupId: !GetAtt BastionHostStack.Outputs.BastionHostSecurityGroupId
         K8sClusterName: !Ref K8sClusterName
         K8sNodesHostnameMode: !Ref K8sNodesHostnameMode
         PodsOverlayNetworkCidr: !Ref PodsOverlayNetworkCidr
         ClusterServicesNetworkCidr: !Ref ClusterServicesNetworkCidr
         ClusterDefaultDns: !Ref ClusterDefaultDns
         KubernetesVersion: !Ref KubernetesVersion
-        ControlPlaneInstanceIAMRoleArn: !ImportValue
-          Fn::Sub: "${ProjectName}-${EnvironmentName}-${BastionHostStackName}-ControlPlaneInstanceIAMRoleArn"
+        ControlPlaneInstanceProfileArn: !GetAtt PolicyRoleStack.Outputs.ControlPlaneInstanceProfileArn
         ControlPlaneAutoScalingGroupName: !Ref ControlPlaneAutoScalingGroupName
         ControlPlaneAutoScalingGroupDesiredCapacity: !Ref ControlPlaneAutoScalingGroupDesiredCapacity
         ControlPlaneAutoScalingGroupMaxSize: !Ref ControlPlaneAutoScalingGroupMaxSize
@@ -333,25 +323,17 @@ Resources:
           ProjectName: !Ref ProjectName
           EnvironmentName: !Ref EnvironmentName
           StackName: !Ref WorkerStackName
-          VpcId: !ImportValue
-            Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-VpcId"
-          VpcCIDR: !ImportValue
-            Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-VpcCIDR"
-          PublicSubnet1Id: !ImportValue
-            Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-PublicSubnet1Id"
-          PrivateSubnet1Id: !ImportValue
-            Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-PrivateSubnet1Id"
-          PrivateSubnet2Id: !ImportValue
-            Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-PrivateSubnet2Id"
-          PrivateSubnet3Id: !ImportValue
-            Fn::Sub: "${ProjectName}-${EnvironmentName}-${VpcStackName}-PrivateSubnet3Id"
-          BastionHostSecurityGroupId: !ImportValue
-            Fn::Sub: "${ProjectName}-${EnvironmentName}-${BastionHostStackName}-BastionHostSecurityGroupId"
+          VpcId: !GetAtt VpcStack.Outputs.VpcId
+          VpcCIDR: !GetAtt VpcStack.Outputs.VpcCIDR
+          PublicSubnet1Id: !GetAtt VpcStack.Outputs.PublicSubnet1Id
+          PrivateSubnet1Id: !GetAtt VpcStack.Outputs.PrivateSubnet1Id
+          PrivateSubnet2Id: !GetAtt VpcStack.Outputs.PrivateSubnet2Id
+          PrivateSubnet3Id: !GetAtt VpcStack.Outputs.PrivateSubnet3Id
+          BastionHostSecurityGroupId: !GetAtt BastionHostStack.Outputs.BastionHostSecurityGroupId
           K8sClusterName: !Ref K8sClusterName
           K8sNodesHostnameMode: !Ref K8sNodesHostnameMode
           KubernetesVersion: !Ref KubernetesVersion
-          WorkerInstanceIAMRoleArn: !ImportValue
-            Fn::Sub: "${ProjectName}-${EnvironmentName}-${BastionHostStackName}-WorkerInstanceIAMRoleArn"
+          WorkerInstanceProfileArn: !GetAtt PolicyRoleStack.Outputs.WorkerInstanceProfileArn
           WorkerSubnet1AutoScalingGroupMaxSize: !Ref WorkerSubnet1AutoScalingGroupMaxSize
           WorkerSubnet2AutoScalingGroupMaxSize: !Ref WorkerSubnet2AutoScalingGroupMaxSize
           WorkerSubnet3AutoScalingGroupMaxSize: !Ref WorkerSubnet3AutoScalingGroupMaxSize

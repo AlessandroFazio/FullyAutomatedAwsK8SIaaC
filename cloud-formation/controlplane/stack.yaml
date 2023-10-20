@@ -67,9 +67,9 @@ Parameters:
     Type: String
     Description: Please enter the Kubernetes version
   
-  ControlPlaneInstanceIAMRoleArn:
+  ControlPlaneInstanceProfileArn:
     Type: String
-    Description: Please enter the ARN of the IAM role for the Control Plane
+    Description: Please enter the ARN of the IAM instance profile for the Control Plane
 
   ControlPlaneAutoScalingGroupName: 
     Type: String
@@ -246,7 +246,8 @@ Resources:
         ImageId: ami-0261755bbcb8c4a84 # Ubuntu AWS 20.04 ami
         InstanceType: !Ref ControlPlaneInstanceType
         IamInstanceProfile:
-          Name: !Ref ControlPlaneInstanceIAMRoleArn
+          Arn: !Ref ControlPlaneInstanceProfileArn
+          Name: ControlPlaneInstanceProfile
         KeyName: !GetAtt ControlPlaneKeyPair.KeyName
         SecurityGroupIds:
           - !Ref ControlPlaneSecurityGroup  # Reference security group(s) by ID

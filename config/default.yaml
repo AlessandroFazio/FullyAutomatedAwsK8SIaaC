@@ -22,6 +22,7 @@ logging:
 
 cloudformation:
   StackName: main
+  Capabilities: [CAPABILITY_NAMED_IAM]
   Parameters:
   # Add parameters to override the default values in the template
   # The auto-configuration will use project and environment name you specified above

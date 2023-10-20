@@ -55,9 +55,9 @@ Parameters:
     Type: String
     Description: The Kubernetes version
   
-  WorkerInstanceIAMRoleArn:
+  WorkerInstanceProfileArn:
     Type: String
-    Description: The ARN of the IAM role for the worker nodes
+    Description: The ARN of the IAM instance profile for the worker nodes
 
   WorkerInstanceType:
     Type: String
@@ -174,7 +174,8 @@ Resources:
         ImageId: ami-0261755bbcb8c4a84 # Ubuntu AWS 20.04 ami
         InstanceType: !Ref WorkerInstanceType
         IamInstanceProfile:
-          Name: !Ref WorkerInstanceIAMRoleArn
+          Arn: !Ref WorkerInstanceProfileArn
+          Name: WorkerInstanceProfile
         KeyName: !GetAtt WorkerKeyPair.KeyName
         SecurityGroupIds:
           - !Ref WorkerSecurityGroup  # Reference security group(s) by ID

@@ -19,6 +19,7 @@ def parse_args() -> Dict[str, str]:
 
 def parse_cloudformation_config(cloudformation_config: Dict[str, Any]) -> Dict[str, Any]:
     config_dict = {}
+
     for key,value in cloudformation_config.items():
         if(key == "StackName"):
             config_dict[key] = value
@@ -26,8 +27,10 @@ def parse_cloudformation_config(cloudformation_config: Dict[str, Any]) -> Dict[s
             config_dict[key] = value
         elif(key == "Parameters"):
             config_dict[key] = parse_cloudformation_parameters(value)
+        elif(key == "Capabilities"):
+            config_dict[key] = value
         else:
-            raise Warning("Invalid cloudformation config key: {}".format(key))
+            print(Warning("Invalid cloudformation config key: {}".format(key)))
     
     return config_dict
 

@@ -18,7 +18,6 @@ from typing import Dict, Any
 
 def main(config: Dict[Any, Any]) -> None:
     """Main function."""
-    LOGGER = get_logger()
 
     project_name = config["project"]["name"]
     environment_name = config["project"]["environment"]["name"]

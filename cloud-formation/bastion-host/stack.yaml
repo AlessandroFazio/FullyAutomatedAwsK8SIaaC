@@ -19,6 +19,10 @@ Parameters:
   StackName:
     Type: String
     Description: Name of the stack
+  
+  S3BucketName:
+    Type: String
+    Description: Name of the S3 bucket where the public key will be stored
 
   VpcId:
     Type: String
@@ -35,6 +39,10 @@ Parameters:
   HomeInternetRouterIp:
     Type: String
     Description: Please enter the IP address of your home internet router
+  
+  BastionHostInstanceProfileArn:
+    Type: String
+    Description: Please enter the ARN of the IAM instance profile for the bastion host
   
   BastionHostInstanceType:
     Description: Please enter Bastion Host Instance Type
@@ -80,6 +88,9 @@ Resources:
         KeyName: !Ref BastionHostKeyPair.KeyName
         SecurityGroupIds:
           - !Ref BastionHostSecurityGroup
+        IamInstanceProfile:
+          Arn: !Ref BastionHostInstanceProfileArn
+          Name: BastionHostInstanceProfile
         BlockDeviceMappings:
           - DeviceName: /dev/sda1
             Ebs:
@@ -139,9 +150,7 @@ Resources:
 Outputs:
   BastionHostSecurityGroupId:
     Description: Security Group ID of the bastion host
-    Value: !Ref BastionHostSecurityGroup
-    Export:
-      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-BastionHostSecurityGroupId
+    Value: !GetAtt BastionHostSecurityGroup.GroupId
 
   BastionHostKeyPairName:
     Description: Name of the Bastion Host Key Pair

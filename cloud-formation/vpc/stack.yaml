@@ -246,90 +246,50 @@ Resources:
 Outputs:
   VpcId:
     Description: VPC ID
-    Value: !Ref VPC
-    Export:
-      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-VpcId
+    Value: !GetAtt VPC.VpcId
 
   VpcCIDR:
     Description: VPC CIDR
-    Value: !Ref VpcCIDR
-    Export:
-      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-VpcCIDR
+    Value: !GetAtt VPC.CidrBlock
   
   PublicSubnet1Id:
     Description: Public Subnet 1 ID
-    Value: !Ref PublicSubnet1
-    Export:
-      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-PublicSubnet1Id
+    Value: !GetAtt PublicSubnet1.SubnetId
   
   PrivateSubnet1Id:
     Description: Private Subnet 1 ID
-    Value: !Ref PrivateSubnet1
-    Export:
-      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-PrivateSubnet1Id
+    Value: !GetAtt PrivateSubnet1.SubnetId
   
   PrivateSubnet2Id:
     Description: Private Subnet 2 ID
-    Value: !Ref PrivateSubnet2
-    Export:
-      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-PrivateSubnet2Id
+    Value: !GetAtt PrivateSubnet2.SubnetId
   
   PrivateSubnet3Id:
     Description: Private Subnet 3 ID
-    Value: !Ref PrivateSubnet3
-    Export:
-      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-PrivateSubnet3Id
+    Value: !GetAtt PrivateSubnet3.SubnetId
   
   NatGateway1Id:
     Description: Nat Gateway 1 ID
-    Value: !Ref NatGateway1
-    Export:
-      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-NatGateway1Id
+    Value: !GetAtt NatGateway1.NatGatewayId
   
   NatGateway1EIP:
     Description: Nat Gateway 1 EIP
     Value: !Ref NatGateway1EIP
-    Export:
-      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-NatGateway1EIP
   
   PublicRouteTableId:
     Description: Public Route Table ID
-    Value: !Ref PublicRouteTable
-    Export:
-      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-PublicRouteTableId
+    Value: !GetAtt PublicRouteTable.RouteTableId
   
   PrivateRouteTable1Id:
     Description: Private Route Table 1 ID
-    Value: !Ref PrivateRouteTable1
-    Export:
-      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-PrivateRouteTable1Id
+    Value: !GetAtt PrivateRouteTable1.RouteTableId
   
   PrivateRouteTable2Id:
     Description: Private Route Table 2 ID
-    Value: !Ref PrivateRouteTable2
-    Export:
-      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-PrivateRouteTable2Id
+    Value: !GetAtt PrivateRouteTable2.RouteTableId
   
   PrivateRouteTable3Id:
     Description: Private Route Table 3 ID
-    Value: !Ref PrivateRouteTable3
-    Export:
-      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-PrivateRouteTable3Id
-  
-  PublicSubnet1RouteTableAssociationId:
-    Description: Public Subnet 1 Route Table Association ID
-    Value: !Ref PublicSubnet1RouteTableAssociation
-  
-  PrivateSubnet1RouteTableAssociationId:
-    Description: Private Subnet 1 Route Table Association ID
-    Value: !Ref PrivateSubnet1RouteTableAssociation
-  
-  PrivateSubnet2RouteTableAssociationId:
-    Description: Private Subnet 2 Route Table Association ID
-    Value: !Ref PrivateSubnet2RouteTableAssociation
-
-  PrivateSubnet3RouteTableAssociationId:
-    Description: Private Subnet 3 Route Table Association ID
-    Value: !Ref PrivateSubnet3RouteTableAssociation
+    Value: !GetAtt PrivateRouteTable3.RouteTableId
 
 

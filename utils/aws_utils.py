@@ -2,6 +2,7 @@ from typing import Dict
 import os
 from typing import Dict
 from utils.config_utils import get_logger
+from constants import CLOUDFORMATION_CAPABILITIES
 
 LOGGER = get_logger()
 
@@ -54,10 +55,9 @@ def get_caller_identity(client) -> Dict[str, str]:
 
 def create_stack(client, config) -> None:
     """Start CloudFormation."""
+    check_cloudformation_capabilities(config["Capabilities"])
     try:
-        client.create_stack(StackName=config["StackName"],
-                            TemplateURL=config["TemplateURL"],
-                            Parameters=config["Parameters"])
+        client.create_stack(**config)
         LOGGER.info(f"Started CloudFormation with: \
                      \n -stack name: {config['StackName']} \
                      \n -from template URL: {config['TemplateURL']}")
@@ -65,3 +65,13 @@ def create_stack(client, config) -> None:
         
         LOGGER.error(f"An error occurred: {e}")
         exit(1)
+
+
+def check_cloudformation_capabilities(capabilities) -> bool:
+    """Check CloudFormation capabilities."""
+    if(isinstance(capabilities, list) == False):
+        return False
+    for capability in capabilities:
+        if(capability not in CLOUDFORMATION_CAPABILITIES):
+            return False
+    return True

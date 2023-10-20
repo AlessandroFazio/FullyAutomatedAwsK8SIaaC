@@ -23,10 +23,13 @@ Parameters:
 
 Resources:
   AwsEbsCsiDriverPolicy:
-    Type: AWS::IAM::ManagedPolicy
+    Type: AWS::IAM::Policy
     Properties:
       PolicyName: AwsEbsCsiDriverPolicy
       Description: Policy for the AWS EBS CSI Driver
+      Roles:
+        - !Ref ControlPlaneInstanceIAMRole
+        - !Ref WorkerInstanceIAMRole
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -111,10 +114,14 @@ Resources:
                 "ec2:ResourceTag/ebs.csi.aws.com/cluster": "true"
 
   S3ReadOnlyAccessPolicy:
-    Type: AWS::IAM::ManagedPolicy
+    Type: AWS::IAM::Policy
     Properties:
       PolicyName: S3ReadOnlyAccessPolicy
       Description: Policy for the S3ReadOnlyAccess
+      Roles: 
+        - !Ref BastionHostInstanceIAMRole
+        - !Ref ControlPlaneInstanceIAMRole
+        - !Ref WorkerInstanceIAMRole
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -131,6 +138,8 @@ Resources:
     Type: AWS::IAM::Policy
     Properties:
       PolicyName: S3WriteOnlyAccessPolicy
+      Roles: 
+        - !Ref ControlPlaneInstanceIAMRole
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -142,10 +151,11 @@ Resources:
               - Fn::Sub: arn:aws:s3:::${S3BucketName}/*
 
   ControlPlaneAwsCloudProviderPolicy:
-    Type: AWS::IAM::ManagedPolicy
+    Type: AWS::IAM::Policy
     Properties:
       PolicyName: ControlPlaneAwsCloudProviderPolicy
-      Description: Policy for the ControlPlaneAwsCloudProvider
+      Roles:
+        - !Ref ControlPlaneInstanceIAMRole
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -211,10 +221,12 @@ Resources:
               - "*"
 
   EcrPrivateRepositoryPullOnlyPolicy:
-    Type: AWS::IAM::ManagedPolicy
+    Type: AWS::IAM::Policy
     Properties:
       PolicyName: EcrPrivateRepositoryPullOnlyPolicy
-      Description: Policy for the EcrPrivateRepositoryPullOnly
+      Roles:
+        - !Ref ControlPlaneInstanceIAMRole
+        - !Ref WorkerInstanceIAMRole
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -231,185 +243,188 @@ Resources:
             Resource: "*"
 
   AwsLoadBalancerControllerPolicy:
-    Type: AWS::IAM::ManagedPolicy
+    Type: AWS::IAM::Policy
     Properties:
       PolicyName: AwsLoadBalancerControllerPolicy
-      Description: Policy for the AwsLoadBalancerController
+      Roles:
+        - !Ref ControlPlaneInstanceIAMRole
+        - !Ref WorkerInstanceIAMRole
       PolicyDocument:
-        Version: "2012-10-17"
+        Version: '2012-10-17'
         Statement:
-          - Effect: Allow
-            Action:
-              - iam:CreateServiceLinkedRole
-            Resource: "*"
-            Condition:
-              StringEquals:
-                iam:AWSServiceName: "elasticloadbalancing.amazonaws.com"
-          - Effect: Allow
-            Action:
-              - ec2:DescribeAccountAttributes
-              - ec2:DescribeAddresses
-              - ec2:DescribeAvailabilityZones
-              - ec2:DescribeInternetGateways
-              - ec2:DescribeVpcs
-              - ec2:DescribeVpcPeeringConnections
-              - ec2:DescribeSubnets
-              - ec2:DescribeSecurityGroups
-              - ec2:DescribeInstances
-              - ec2:DescribeNetworkInterfaces
-              - ec2:DescribeTags
-              - ec2:GetCoipPoolUsage
-              - ec2:DescribeCoipPools
-              - elasticloadbalancing:DescribeLoadBalancers
-              - elasticloadbalancing:DescribeLoadBalancerAttributes
-              - elasticloadbalancing:DescribeListeners
-              - elasticloadbalancing:DescribeListenerCertificates
-              - elasticloadbalancing:DescribeSSLPolicies
-              - elasticloadbalancing:DescribeRules
-              - elasticloadbalancing:DescribeTargetGroups
-              - elasticloadbalancing:DescribeTargetGroupAttributes
-              - elasticloadbalancing:DescribeTargetHealth
-              - elasticloadbalancing:DescribeTags
-            Resource: "*"
-          - Effect: Allow
-            Action:
-              - cognito-idp:DescribeUserPoolClient
-              - acm:ListCertificates
-              - acm:DescribeCertificate
-              - iam:ListServerCertificates
-              - iam:GetServerCertificate
-              - waf-regional:GetWebACL
-              - waf-regional:GetWebACLForResource
-              - waf-regional:AssociateWebACL
-              - waf-regional:DisassociateWebACL
-              - wafv2:GetWebACL
-              - wafv2:GetWebACLForResource
-              - wafv2:AssociateWebACL
-              - wafv2:DisassociateWebACL
-              - shield:GetSubscriptionState
-              - shield:DescribeProtection
-              - shield:CreateProtection
-              - shield:DeleteProtection
-            Resource: "*"
-          - Effect: Allow
-            Action:
-              - ec2:AuthorizeSecurityGroupIngress
-              - ec2:RevokeSecurityGroupIngress
-            Resource: "*"
-          - Effect: Allow
-            Action:
-              - ec2:CreateSecurityGroup
-            Resource: "*"
-          - Effect: Allow
-            Action:
-              - ec2:CreateTags
-            Resource: "arn:aws:ec2:*:*:security-group/*"
-            Condition:
-              StringEquals:
-                ec2:CreateAction: "CreateSecurityGroup"
-              Null:
-                aws:RequestTag/elbv2.k8s.aws/cluster: "false"
-          - Effect: Allow
-            Action:
-              - ec2:CreateTags
-              - ec2:DeleteTags
-            Resource: "arn:aws:ec2:*:*:security-group/*"
-            Condition:
-              Null:
-                aws:RequestTag/elbv2.k8s.aws/cluster: "true"
-                aws:ResourceTag/elbv2.k8s.aws/cluster: "false"
-          - Effect: Allow
-            Action:
-              - ec2:AuthorizeSecurityGroupIngress
-              - ec2:RevokeSecurityGroupIngress
-              - ec2:DeleteSecurityGroup
-            Resource: "*"
-            Condition:
-              Null:
-                aws:ResourceTag/elbv2.k8s.aws/cluster: "false"
-          - Effect: Allow
-            Action:
-              - elasticloadbalancing:CreateLoadBalancer
-              - elasticloadbalancing:CreateTargetGroup
-            Resource: "*"
-            Condition:
-              Null:
-                aws:RequestTag/elbv2.k8s.aws/cluster: "false"
-          - Effect: Allow
-            Action:
-              - elasticloadbalancing:CreateListener
-              - elasticloadbalancing:DeleteListener
-              - elasticloadbalancing:CreateRule
-              - elasticloadbalancing:DeleteRule
-            Resource: "*"
-          - Effect: Allow
-            Action:
-              - elasticloadbalancing:AddTags
-              - elasticloadbalancing:RemoveTags
-            Resource:
-              - "arn:aws:elasticloadbalancing:*:*:targetgroup/*/*"
-              - "arn:aws:elasticloadbalancing:*:*:loadbalancer/net/*/*"
-              - "arn:aws:elasticloadbalancing:*:*:loadbalancer/app/*/*"
-            Condition:
-              Null:
-                aws:RequestTag/elbv2.k8s.aws/cluster: "true"
-                aws:ResourceTag/elbv2.k8s.aws/cluster: "false"
-          - Effect: Allow
-            Action:
-              - elasticloadbalancing:AddTags
-              - elasticloadbalancing:RemoveTags
-            Resource:
-              - "arn:aws:elasticloadbalancing:*:*:listener/net/*/*/*"
-              - "arn:aws:elasticloadbalancing:*:*:listener/app/*/*/*"
-              - "arn:aws:elasticloadbalancing:*:*:listener-rule/net/*/*/*"
-              - "arn:aws:elasticloadbalancing:*:*:listener-rule/app/*/*/*"
-          - Effect: Allow
-            Action:
-              - elasticloadbalancing:ModifyLoadBalancerAttributes
-              - elasticloadbalancing:SetIpAddressType
-              - elasticloadbalancing:SetSecurityGroups
-              - elasticloadbalancing:SetSubnets
-              - elasticloadbalancing:DeleteLoadBalancer
-              - elasticloadbalancing:ModifyTargetGroup
-              - elasticloadbalancing:ModifyTargetGroupAttributes
-              - elasticloadbalancing:DeleteTargetGroup
-            Resource: "*"
-            Condition:
-              Null:
-                aws:ResourceTag/elbv2.k8s.aws/cluster: "false"
-          - Effect: Allow
-            Action:
-              - elasticloadbalancing:AddTags
-            Resource:
-              - "arn:aws:elasticloadbalancing:*:*:targetgroup/*/*"
-              - "arn:aws:elasticloadbalancing:*:*:loadbalancer/net/*/*"
-              - "arn:aws:elasticloadbalancing:*:*:loadbalancer/app/*/*"
-            Condition:
-              StringEquals:
-                elasticloadbalancing:CreateAction:
-                  - "CreateTargetGroup"
-                  - "CreateLoadBalancer"
-              Null:
-                aws:RequestTag/elbv2.k8s.aws/cluster: "false"
-          - Effect: Allow
-            Action:
-              - elasticloadbalancing:RegisterTargets
-              - elasticloadbalancing:DeregisterTargets
-            Resource: "arn:aws:elasticloadbalancing:*:*:targetgroup/*/*"
-          - Effect: Allow
-            Action:
-              - elasticloadbalancing:SetWebAcl
-              - elasticloadbalancing:ModifyListener
-              - elasticloadbalancing:AddListenerCertificates
-              - elasticloadbalancing:RemoveListenerCertificates
-              - elasticloadbalancing:ModifyRule
-            Resource: "*"
+        - Effect: Allow
+          Action:
+          - iam:CreateServiceLinkedRole
+          Resource: "*"
+          Condition:
+            StringEquals:
+              iam:AWSServiceName: elasticloadbalancing.amazonaws.com
+        - Effect: Allow
+          Action:
+          - ec2:DescribeAccountAttributes
+          - ec2:DescribeAddresses
+          - ec2:DescribeAvailabilityZones
+          - ec2:DescribeInternetGateways
+          - ec2:DescribeVpcs
+          - ec2:DescribeVpcPeeringConnections
+          - ec2:DescribeSubnets
+          - ec2:DescribeSecurityGroups
+          - ec2:DescribeInstances
+          - ec2:DescribeNetworkInterfaces
+          - ec2:DescribeTags
+          - ec2:GetCoipPoolUsage
+          - ec2:DescribeCoipPools
+          - elasticloadbalancing:DescribeLoadBalancers
+          - elasticloadbalancing:DescribeLoadBalancerAttributes
+          - elasticloadbalancing:DescribeListeners
+          - elasticloadbalancing:DescribeListenerCertificates
+          - elasticloadbalancing:DescribeSSLPolicies
+          - elasticloadbalancing:DescribeRules
+          - elasticloadbalancing:DescribeTargetGroups
+          - elasticloadbalancing:DescribeTargetGroupAttributes
+          - elasticloadbalancing:DescribeTargetHealth
+          - elasticloadbalancing:DescribeTags
+          Resource: "*"
+        - Effect: Allow
+          Action:
+          - cognito-idp:DescribeUserPoolClient
+          - acm:ListCertificates
+          - acm:DescribeCertificate
+          - iam:ListServerCertificates
+          - iam:GetServerCertificate
+          - waf-regional:GetWebACL
+          - waf-regional:GetWebACLForResource
+          - waf-regional:AssociateWebACL
+          - waf-regional:DisassociateWebACL
+          - wafv2:GetWebACL
+          - wafv2:GetWebACLForResource
+          - wafv2:AssociateWebACL
+          - wafv2:DisassociateWebACL
+          - shield:GetSubscriptionState
+          - shield:DescribeProtection
+          - shield:CreateProtection
+          - shield:DeleteProtection
+          Resource: "*"
+        - Effect: Allow
+          Action:
+          - ec2:AuthorizeSecurityGroupIngress
+          - ec2:RevokeSecurityGroupIngress
+          Resource: "*"
+        - Effect: Allow
+          Action:
+          - ec2:CreateSecurityGroup
+          Resource: "*"
+        - Effect: Allow
+          Action:
+          - ec2:CreateTags
+          Resource: arn:aws:ec2:*:*:security-group/*
+          Condition:
+            StringEquals:
+              ec2:CreateAction: CreateSecurityGroup
+            'Null':
+              aws:RequestTag/elbv2.k8s.aws/cluster: 'false'
+        - Effect: Allow
+          Action:
+          - ec2:CreateTags
+          - ec2:DeleteTags
+          Resource: arn:aws:ec2:*:*:security-group/*
+          Condition:
+            'Null':
+              aws:RequestTag/elbv2.k8s.aws/cluster: 'true'
+              aws:ResourceTag/elbv2.k8s.aws/cluster: 'false'
+        - Effect: Allow
+          Action:
+          - ec2:AuthorizeSecurityGroupIngress
+          - ec2:RevokeSecurityGroupIngress
+          - ec2:DeleteSecurityGroup
+          Resource: "*"
+          Condition:
+            'Null':
+              aws:ResourceTag/elbv2.k8s.aws/cluster: 'false'
+        - Effect: Allow
+          Action:
+          - elasticloadbalancing:CreateLoadBalancer
+          - elasticloadbalancing:CreateTargetGroup
+          Resource: "*"
+          Condition:
+            'Null':
+              aws:RequestTag/elbv2.k8s.aws/cluster: 'false'
+        - Effect: Allow
+          Action:
+          - elasticloadbalancing:CreateListener
+          - elasticloadbalancing:DeleteListener
+          - elasticloadbalancing:CreateRule
+          - elasticloadbalancing:DeleteRule
+          Resource: "*"
+        - Effect: Allow
+          Action:
+          - elasticloadbalancing:AddTags
+          - elasticloadbalancing:RemoveTags
+          Resource:
+          - arn:aws:elasticloadbalancing:*:*:targetgroup/*/*
+          - arn:aws:elasticloadbalancing:*:*:loadbalancer/net/*/*
+          - arn:aws:elasticloadbalancing:*:*:loadbalancer/app/*/*
+          Condition:
+            'Null':
+              aws:RequestTag/elbv2.k8s.aws/cluster: 'true'
+              aws:ResourceTag/elbv2.k8s.aws/cluster: 'false'
+        - Effect: Allow
+          Action:
+          - elasticloadbalancing:AddTags
+          - elasticloadbalancing:RemoveTags
+          Resource:
+          - arn:aws:elasticloadbalancing:*:*:listener/net/*/*/*
+          - arn:aws:elasticloadbalancing:*:*:listener/app/*/*/*
+          - arn:aws:elasticloadbalancing:*:*:listener-rule/net/*/*/*
+          - arn:aws:elasticloadbalancing:*:*:listener-rule/app/*/*/*
+        - Effect: Allow
+          Action:
+          - elasticloadbalancing:ModifyLoadBalancerAttributes
+          - elasticloadbalancing:SetIpAddressType
+          - elasticloadbalancing:SetSecurityGroups
+          - elasticloadbalancing:SetSubnets
+          - elasticloadbalancing:DeleteLoadBalancer
+          - elasticloadbalancing:ModifyTargetGroup
+          - elasticloadbalancing:ModifyTargetGroupAttributes
+          - elasticloadbalancing:DeleteTargetGroup
+          Resource: "*"
+          Condition:
+            'Null':
+              aws:ResourceTag/elbv2.k8s.aws/cluster: 'false'
+        - Effect: Allow
+          Action:
+          - elasticloadbalancing:AddTags
+          Resource:
+          - arn:aws:elasticloadbalancing:*:*:targetgroup/*/*
+          - arn:aws:elasticloadbalancing:*:*:loadbalancer/net/*/*
+          - arn:aws:elasticloadbalancing:*:*:loadbalancer/app/*/*
+          Condition:
+            StringEquals:
+              elasticloadbalancing:CreateAction:
+              - CreateTargetGroup
+              - CreateLoadBalancer
+            'Null':
+              aws:RequestTag/elbv2.k8s.aws/cluster: 'false'
+        - Effect: Allow
+          Action:
+          - elasticloadbalancing:RegisterTargets
+          - elasticloadbalancing:DeregisterTargets
+          Resource: arn:aws:elasticloadbalancing:*:*:targetgroup/*/*
+        - Effect: Allow
+          Action:
+          - elasticloadbalancing:SetWebAcl
+          - elasticloadbalancing:ModifyListener
+          - elasticloadbalancing:AddListenerCertificates
+          - elasticloadbalancing:RemoveListenerCertificates
+          - elasticloadbalancing:ModifyRule
+          Resource: "*"
 
   WorkerAwsCloudProviderPolicy:
-    Type: AWS::IAM::ManagedPolicy
+    Type: AWS::IAM::Policy
     Properties:
-      ManagedPolicyName: WorkerAwsCloudProviderPolicy
-      Description: Policy for the WorkerAwsCloudProvider
+      PolicyName: WorkerAwsCloudProviderPolicy
+      Roles:
+        - !Ref WorkerInstanceIAMRole
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -427,9 +442,12 @@ Resources:
             Resource: "*"
 
   ClusterAutoScalingPolicy:
-    Type: AWS::IAM::ManagedPolicy
+    Type: AWS::IAM::Policy
     Properties:
-      ManagedPolicyName: YourAutoScalingPolicyName
+      PolicyName: ClusterAutoScalingPolicy
+      Roles:
+        - !Ref ControlPlaneInstanceIAMRole
+        - !Ref WorkerInstanceIAMRole
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -456,6 +474,8 @@ Resources:
     Type: "AWS::IAM::Policy"
     Properties:
       PolicyName: "ParameterStoreWritePolicy"
+      Roles:
+        - !Ref ControlPlaneInstanceIAMRole
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -468,6 +488,8 @@ Resources:
     Type: "AWS::IAM::Policy"
     Properties:
       PolicyName: "KMSKeyEncryptAccessPolicy"
+      Roles:
+        - !Ref ControlPlaneInstanceIAMRole
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -480,6 +502,9 @@ Resources:
     Type: "AWS::IAM::Policy"
     Properties:
       PolicyName: "SSMParameterAccessPolicy"
+      Roles:
+        - !Ref ControlPlaneInstanceIAMRole
+        - !Ref WorkerInstanceIAMRole
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -492,6 +517,9 @@ Resources:
     Type: "AWS::IAM::Policy"
     Properties:
       PolicyName: "KMSKeyAccessPolicy"
+      Roles:
+        - !Ref ControlPlaneInstanceIAMRole
+        - !Ref WorkerInstanceIAMRole
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -502,6 +530,30 @@ Resources:
               - "kms:GetKeyRotationStatus"
             Resource:
               - "*"
+  
+  BastionHostInstanceIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: BastionHostInstanceIAMRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Tags:
+        - Key: Name
+          Value: BastionHostInstanceIAMRole
+  
+  BastionHostInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: BastionHostInstanceProfile
+      Roles:
+        - !Ref BastionHostInstanceIAMRole
 
   ControlPlaneInstanceIAMRole:
     Type: AWS::IAM::Role
@@ -516,19 +568,16 @@ Resources:
                 - ec2.amazonaws.com
             Action:
               - sts:AssumeRole
-      ManagedPolicyArns:
-        - !Ref ControlPlaneAwsCloudProviderPolicy
-        - !Ref AwsEbsCsiDriverPolicy
-        - !Ref S3ReadOnlyAccessPolicy
-        - !Ref S3WriteOnlyAccessPolicy
-        - !Ref EcrPrivateRepositoryPullOnlyPolicy
-        - !Ref AwsLoadBalancerControllerPolicy
-        - !Ref ClusterAutoScalingPolicy
-        - !Ref KubernetesClusterPutSSMParameterStoreAccessPolicy
-        - !Ref KubernetesClusterKMSKeyEncryptAccessPolicy
       Tags:
         - Key: Name
           Value: ControlPlaneInstanceIAMRole
+  
+  ControlPlaneInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: ControlPlaneInstanceProfile
+      Roles:
+        - !Ref ControlPlaneInstanceIAMRole
 
   WorkerInstanceIAMRole:
     Type: AWS::IAM::Role
@@ -543,28 +592,26 @@ Resources:
                 - ec2.amazonaws.com
             Action:
               - sts:AssumeRole
-      ManagedPolicyArns:
-        - !Ref WorkerAwsCloudProviderPolicy
-        - !Ref AwsEbsCsiDriverPolicy
-        - !Ref S3ReadOnlyAccessPolicy
-        - !Ref EcrPrivateRepositoryPullOnlyPolicy
-        - !Ref AwsLoadBalancerControllerPolicy
-        - !Ref ClusterAutoScalingPolicy
-        - !Ref KubernetesClusterGetSSMParameterAccessPolicy
-        - !Ref KubernetesClusterGetKMSKeyAccessPolicy
       Tags:
         - Key: Name
           Value: WorkerInstanceIAMRole
+  
+  WorkerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: WorkerInstanceProfile
+      Roles:
+        - !Ref WorkerInstanceIAMRole
 
 Outputs:
-  ControlPlaneInstanceIAMRoleArn:
-    Description: ARN of the ControlPlaneInstanceIAMRole
-    Value: !GetAtt ControlPlaneInstanceIAMRole.Arn
-    Export:
-      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-ControlPlaneInstanceIAMRoleArn
+  BastionHostInstanceProfileArn:
+    Description: ARN of the BastionHostInstanceProfile
+    Value: !GetAtt BastionHostInstanceProfile.Arn
 
-  WorkerInstanceIAMRoleArn:
-    Description: ARN of the WorkerInstanceIAMRole
-    Value: !GetAtt WorkerInstanceIAMRole.Arn
-    Export:
-      Name: !Sub ${ProjectName}-${EnvironmentName}-${StackName}-WorkerInstanceIAMRoleArn
+  ControlPlaneInstanceProfileArn:
+    Description: ARN of the ControlPlaneInstanceProfile
+    Value: !GetAtt ControlPlaneInstanceProfile.Arn
+
+  WorkerInstanceProfileArn:
+    Description: ARN of the WorkerInstanceProfile
+    Value: !GetAtt WorkerInstanceProfile.Arn
