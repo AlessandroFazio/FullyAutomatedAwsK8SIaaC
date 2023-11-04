@@ -6,12 +6,15 @@ from utils.config_utils import (
 from utils.aws_utils import (
     get_caller_identity,
     create_s3_bucket,
+    push_to_ecr,
     upload_file_to_s3,
     upload_dir_to_s3,
-    create_stack
+    create_stack,
 )
+from utils.docker_utils import get_docker_image
 from utils.ssh_utils import generate_key
 import boto3
+from docker import DockerClient
 import os
 from constants import *
 from typing import Dict, Any
@@ -42,6 +45,11 @@ def main(config: Dict[Any, Any]) -> None:
     upload_dir_to_s3(s3_client, bucket_name, SCRIPTS_DIR)
     upload_dir_to_s3(s3_client, bucket_name, TEMPLATES_DIR)
     
+    docker_client = DockerClient.from_env()
+    ecr_client = boto3.client('ecr', region_name='us-east-1')
+    repository_name = f"{project_name}/{environment_name}/lambda/dbbootstrap"
+    push_to_ecr(docker_client, ecr_client, f"{LAMBDA_DIR}/dbbootstrap", repository_name)
+
     cf_client = boto3.client("cloudformation", region)
     auto_configure_cloudformation(config, bucket_name)
     create_stack(cf_client, config["cloudformation"])
@@ -49,5 +57,13 @@ def main(config: Dict[Any, Any]) -> None:
 if __name__ == "__main__":
     config = configure()
     LOGGER = get_logger()
-    main(config)
+    #main(config)
+    project_name = config["project"]["name"]
+    environment_name = config["project"]["environment"]["name"]
+    docker_client = DockerClient.from_env()
+    ecr_client = boto3.client('ecr', region_name='us-east-1')
+    repository_name = f"{project_name}/{environment_name}/lambda/dbbootstrap"
+    push_to_ecr(docker_client, ecr_client, f"{LAMBDA_DIR}/dbbootstrap", repository_name)
+    
+
 

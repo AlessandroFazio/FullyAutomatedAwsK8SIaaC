@@ -1,0 +1,554 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation Template to create Aurora Postgresql Cluster DB Instance'  
+
+
+###############################################################################
+# Parameters
+###############################################################################
+
+Parameters:
+  EnvironmentType:
+    Type: String
+    Description: The environment tag is used to designate the Environment Stage of the associated AWS resource.
+
+  ProjectName:
+    Type: String
+    Description: The ProjectName tag is used to designate the project name associated with the given AWS resource.
+  
+  VpcCidr:
+    Type: String
+    Description: The VpcCidr tag is used to designate the VPC CIDR block associated with the given AWS resource.
+  
+  VpcId:
+    Type: String
+    Description: The VpcId tag is used to designate the VPC ID associated with the given AWS resource.
+  
+  PrivateSubnet1Id:
+    Type: String
+    Description: The PrivateSubnet1Id tag is used to designate the Private Subnet 1 ID associated with the given AWS resource.
+  
+  PrivateSubnet2Id:
+    Type: String
+    Description: The PrivateSubnet2Id tag is used to designate the Private Subnet 2 ID associated with the given AWS resource.
+
+  BastionHostSecurityGroupId:
+    Type: String
+    Description: The BastionHostSecurityGroupId tag is used to designate the Bastion Host Security Group ID associated with the given AWS resource.
+    
+  DBName:
+    Description: Database Name
+    Type: String
+
+  DBPort:
+    Description: TCP/IP Port for the Database Instance
+    Type: Number
+    
+  DBUsername:
+    Description: Database master username
+    Type: String
+     
+  DBEngineVersion:
+    Description: Select Database Engine Version
+    Type: String
+     
+  DBInstanceClass:
+    Default: db.r6g.large
+    Description: Database Instance Class
+
+  DBSnapshotName:
+    Description: Optional. DB Snapshot ID to restore database. Leave this blank if you are not restoring from a snapshot.
+    Type: String
+
+  DBBootStrapLambdaRepositoryName:
+    Description: Optional. Lambda Repository Name to bootstrap database. Leave this blank if you are not bootstrapping database.
+    Type: String
+
+  DBBootStrapLambdaImageUri:
+    Description: Optional. Lambda Image URI to bootstrap database. Leave this blank if you are not bootstrapping database.
+    Type: String
+  
+  LambdaBootStrapSQLStatementS3Bucket:
+    Description: Optional. S3 Bucket Name to bootstrap database. Leave this blank if you are not bootstrapping database.
+    Type: String
+  
+  LambdaBootStrapSQLStatementS3Key:
+    Description: Optional. S3 Key Name to bootstrap database. Leave this blank if you are not bootstrapping database.
+    Type: String
+
+
+###############################################################################
+# Parameter Groups
+###############################################################################
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: Environment
+        Parameters:
+          - EnvironmentType
+      -
+        Label:
+          default: DB Parameters
+        Parameters:
+          - DBName
+          - DBPort
+          - DBUsername
+          - DBInstanceClass
+          - DBEngineVersion
+          - DBSnapshotName
+          - LambdaBootStrapS3Bucket
+          - LambdaBootStrapS3Key
+      -
+        Label:
+          default: Networking
+        Parameters:
+          - VpcCidr
+          - VpcId
+          - PrivateSubnet1Id
+          - PrivateSubnet2Id
+      -
+        Label:
+          default: Mandatory Tags
+        Parameters:
+          - ProjectName
+          - EnvironmentType
+          
+
+###############################################################################
+# Mappings
+###############################################################################
+
+Mappings: 
+  DBFamilyMap: 
+    "11.16":
+      "family": "aurora-postgresql11"
+    "12.11":
+      "family": "aurora-postgresql12"
+    "13.7":
+      "family": "aurora-postgresql13"
+    "14.3":
+      "family": "aurora-postgresql14"
+
+      
+###############################################################################
+# Conditions
+############################################################################### 
+
+Conditions:
+  IsUseDBSnapshot: !Not [!Equals [!Ref DBSnapshotName, ""]]
+  IsNotUseDBSnapshot: !Not [Condition: IsUseDBSnapshot]
+  IsProd: !Equals [!Ref EnvironmentStage, 'prod']
+  DoDBBootStrap: !And
+    - !Not [!Equals [!Ref LambdaBootStrapS3Bucket, '']]
+    - !Not [!Equals [!Ref LambdaBootStrapS3Key, '']]
+    - !Not [Condition: IsUseDBSnapshot]
+  DoEnableIAM: !Not [!Equals [!Ref DBEngineVersion, '9.6.8']]
+  
+
+###############################################################################
+# Resources 
+###############################################################################   
+    
+Resources:
+          
+  DBSubnetGroup:
+    Type: 'AWS::RDS::DBSubnetGroup'
+    Properties:
+      DBSubnetGroupDescription: '${AWS::StackName}'
+      SubnetIds:
+      - !Ref PrivateSubnet1Id
+      - !Ref PrivateSubnet2Id
+      
+  ClusterSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: !Ref 'AWS::StackName'
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: !Ref DBPort
+        ToPort: !Ref DBPort
+        SourceSecurityGroupId: !Ref BastionHostSecurityGroupId
+        Description: 'Access to Bastion Host Security Group'
+      VpcId: !Ref VpcId
+      Tags:
+      - Key: Name
+        Value: !Sub '${AWS::StackName}-AuroraClusterSecurityGroup'
+        
+  ClusterSecurityGroupIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !GetAtt 'ClusterSecurityGroup.GroupId'
+      IpProtocol: -1
+      SourceSecurityGroupId: !Ref ClusterSecurityGroup
+      Description: 'Self Reference'        
+      
+  RDSDBClusterParameterGroup:
+    Type: AWS::RDS::DBClusterParameterGroup
+    Properties:
+      Description: !Join [ "- ", [ "Aurora PG Cluster Parameter Group for  Cloudformation Stack ", !Ref DBName ] ]
+      Family: !FindInMap [DBFamilyMap, !Ref DBEngineVersion, "family"] 
+      Parameters:
+        rds.force_ssl: 1
+        
+  DBParamGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: !Join [ "- ", [ "Aurora PG Database Instance Parameter Group for Cloudformation Stack ", !Ref DBName ] ]
+      Family: !FindInMap [DBFamilyMap, !Ref DBEngineVersion, "family"] 
+      Parameters:
+        shared_preload_libraries: auto_explain,pg_stat_statements,pg_hint_plan,pgaudit
+        log_statement: "ddl"
+        log_connections: 1
+        log_disconnections: 1
+        log_lock_waits: 1
+        log_min_duration_statement: 5000
+        auto_explain.log_min_duration: 5000
+        auto_explain.log_verbose: 1
+        log_rotation_age: 1440
+        log_rotation_size: 102400
+        rds.log_retention_period: 10080
+        random_page_cost: 1
+        track_activity_query_size: 16384
+        idle_in_transaction_session_timeout: 7200000
+        statement_timeout: 7200000
+        search_path: '"$user",public'
+
+  AuroraKMSCMK:
+    Type: 'AWS::KMS::Key'
+    DeletionPolicy: Retain
+    Properties:
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+          Action: 'kms:*'
+          Resource: '*'
+        - Effect: Allow
+          Principal:
+            AWS: '*'
+          Action:
+          - 'kms:Encrypt'
+          - 'kms:Decrypt'
+          - 'kms:ReEncrypt*'
+          - 'kms:GenerateDataKey*'
+          - 'kms:CreateGrant'
+          - 'kms:ListGrants'
+          - 'kms:DescribeKey'
+          Resource: '*'
+          Condition:
+            StringEquals:
+              'kms:CallerAccount': !Ref 'AWS::AccountId'
+              'kms:ViaService': !Sub 'rds.${AWS::Region}.amazonaws.com'
+
+  AuroraKMSCMKAlias:
+    Type: 'AWS::KMS::Alias'
+    DeletionPolicy: Retain
+    DependsOn: AuroraDBCluster
+    Properties:
+      AliasName: !Sub 'alias/${AuroraDBCluster}'
+      TargetKeyId: !Ref AuroraKMSCMK
+
+  AuroraMasterSecret:
+    Condition: IsNotUseDBSnapshot
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Join ['/', [!Ref EnvironmentType, 'aurora-pg', !Ref 'AWS::StackName']]
+      Description: !Join ['', ['Aurora PostgreSQL Master User Secret ', 'for CloudFormation Stack ', !Ref 'AWS::StackName']]
+      Tags:
+        -
+          Key: EnvironmentType
+          Value: !Ref EnvironmentType
+        -
+          Key: DatabaseEngine
+          Value: 'Aurora PostgreSQL'
+        -
+          Key: StackID
+          Value: !Ref 'AWS::StackId'
+      GenerateSecretString:
+        SecretStringTemplate: !Join ['', ['{"username": "', !Ref DBUsername, '"}']]
+        GenerateStringKey: "password"
+        ExcludeCharacters: '"@/\'
+        PasswordLength: 16
+
+  SecretAuroraClusterAttachment:
+    Condition: IsNotUseDBSnapshot
+    Type: AWS::SecretsManager::SecretTargetAttachment
+    Properties:
+      SecretId: !Ref AuroraMasterSecret
+      TargetId: !Ref AuroraDBCluster
+      TargetType: AWS::RDS::DBCluster
+
+  AuroraSecretResourcePolicy:
+    Condition: IsNotUseDBSnapshot
+    Type: AWS::SecretsManager::ResourcePolicy
+    Properties:
+      SecretId: !Ref AuroraMasterSecret
+      ResourcePolicy:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Deny"
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: "secretsmanager:DeleteSecret"
+            Resource: "*"
+        
+  AuroraDBCluster:
+    Type: AWS::RDS::DBCluster
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      Engine: aurora-postgresql
+      EngineVersion: !Ref DBEngineVersion
+      DatabaseName: !If [IsUseDBSnapshot, !Ref "AWS::NoValue", !Ref DBName]
+      Port: !Ref DBPort
+      MasterUsername:
+        !If [IsUseDBSnapshot, !Ref "AWS::NoValue", !Join ['', ['{{resolve:secretsmanager:', !Ref AuroraMasterSecret, ':SecretString:username}}' ]]]
+      MasterUserPassword:
+        !If [IsUseDBSnapshot, !Ref "AWS::NoValue", !Join ['', ['{{resolve:secretsmanager:', !Ref AuroraMasterSecret, ':SecretString:password}}' ]]]
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VpcSecurityGroupIds:
+      - !Ref ClusterSecurityGroup  
+      BackupRetentionPeriod: !If [IsProd, 35, 7]
+      DBClusterParameterGroupName: !Ref RDSDBClusterParameterGroup
+      SnapshotIdentifier: !If [IsUseDBSnapshot, !Ref DBSnapshotName, !Ref "AWS::NoValue"]
+      StorageEncrypted:  !If [IsUseDBSnapshot, !Ref "AWS::NoValue", true]
+      KmsKeyId: !If [IsNotUseDBSnapshot, !Ref AuroraKMSCMK, !Ref 'AWS::NoValue']
+      EnableIAMDatabaseAuthentication: !If [DoEnableIAM, true, !Ref "AWS::NoValue"]
+      Tags:
+        -
+          Key: EnvironmentType
+          Value: !Ref EnvironmentType
+        -
+          Key: ProjectName
+          Value: !Ref ProjectName
+        
+  AuroraDBFirstInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      CopyTagsToSnapshot: true  
+      DBInstanceClass:
+        Ref: DBInstanceClass
+      DBClusterIdentifier: !Ref AuroraDBCluster
+      Engine: aurora-postgresql
+      EngineVersion: !Ref DBEngineVersion
+      DBParameterGroupName:
+        Ref: DBParamGroup
+      MonitoringInterval: 0
+      AutoMinorVersionUpgrade: !If [IsProd, 'false', 'true']
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      PubliclyAccessible: false
+      EnablePerformanceInsights: true
+      PerformanceInsightsKMSKeyId: !Ref AuroraKMSCMK
+      PerformanceInsightsRetentionPeriod: !If [IsProd, 731, 7]
+      Tags:
+        -
+          Key: EnvironmentType
+          Value: !Ref EnvironmentType
+        -
+          Key: ProjectName
+          Value: !Ref ProjectName
+
+  AuroraDBSecondInstance:
+    Condition: IsReplica
+    Type: AWS::RDS::DBInstance
+    DependsOn: 
+      - AuroraDBFirstInstance
+    Properties:
+      CopyTagsToSnapshot: true  
+      DBInstanceClass:
+        Ref: DBInstanceClass
+      DBClusterIdentifier: !Ref AuroraDBCluster
+      Engine: aurora-postgresql
+      EngineVersion: !Ref DBEngineVersion
+      DBParameterGroupName:
+        Ref: DBParamGroup
+      MonitoringInterval: 0
+      AutoMinorVersionUpgrade: !If [IsProd, 'false', 'true']
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      PubliclyAccessible: false
+      EnablePerformanceInsights: true
+      PerformanceInsightsKMSKeyId: !Ref AuroraKMSCMK
+      PerformanceInsightsRetentionPeriod: !If [IsProd, 731, 7]
+      Tags:
+        -
+          Key: EnvironmentType
+          Value: !Ref EnvironmentType
+        -
+          Key: ProjectName
+          Value: !Ref ProjectName
+  
+  DBBootStrapLambdaRole:
+    Type: AWS::IAM::Role
+    Condition: DoDBBootStrap
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 
+              - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole'
+      Policies:
+        - 
+          PolicyName: "secretaccess"
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+              - 
+                Effect: "Allow"
+                Action: "secretsmanager:GetSecretValue"
+                Resource: !Ref AuroraMasterSecret
+        - 
+          PolicyName: "ECRPermissionsPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "ecr:GetDownloadUrlForLayer"
+                  - "ecr:GetAuthorizationToken"
+                  - "ecr:BatchCheckLayerAvailability"
+                  - "ecr:GetRepositoryPolicy"
+                  - "ecr:DescribeRepositories"
+                  - "ecr:ListImages"
+                  - "ecr:GetImage"
+                  - "ecr:GetObject"
+                  - "ecr:BatchGetImage"
+                Resource:
+                  - !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${DBBootStrapLambdaRepositoryName}"
+        - 
+          PolicyName: "S3PermissionsPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "s3:GetObject"
+                  - "s3:PutObject"
+                  - "s3:ListBucket"
+                Resource:
+                  - !Sub "arn:aws:s3:::${LambdaBootStrapS3Bucket}/${LambdaBootStrapS3Key}"
+
+  DBBootStrapLambdaFnSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub '${AWS::StackName}-DBBootStrapLambdaFnSecurityGroup'
+      VpcId: !Ref VpcId
+      Tags:
+        - 
+          Key: Name
+          Value: !Sub '${AWS::StackName}-DBBootStrapLambdaFnSecurityGroup'
+          
+  DBBootStrapLambdaFn:
+    Condition: DoDBBootStrap
+    Type: AWS::Lambda::Function
+    DependsOn:
+      - DBBootStrapLambdaRole
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-DBBootStrapLambdaFn'
+      Description: >-
+          BootStrap newly Created Aurora PostgreSQL Database
+      PackageType: Image
+      Code:
+        ImageUri: !Ref DBBootStrapLambdaImageUri
+      Architectures: 
+        - x86_64
+      MemorySize: 128
+      Role: !GetAtt DBBootStrapLambdaRole.Arn
+      Timeout: 60
+      VpcConfig: 
+        SecurityGroupIds: 
+          - !Ref DBBootStrapLambdaFnSecurityGroup
+        SubnetIds: 
+          - !Ref PrivateSubnet1Id
+          - !Ref PrivateSubnet2Id
+      Environment:
+        Variables: 
+          DBHost: !GetAtt 'AuroraDBCluster.Endpoint.Address'
+          DBPort: !GetAtt 'AuroraDBCluster.Endpoint.Port'
+          DBUser: !Ref DBUsername
+          DBName: !Ref DBName
+          Secret_ARN: !Ref AuroraMasterSecret
+          Region_Name: !Ref "AWS::Region"
+          SQLScriptS3Bucket: !Ref LambdaBootStrapSQLStatementS3Bucket
+          SQLScriptS3Key: !Ref LambdaBootStrapSQLStatementS3Key
+  
+  DBSNSTopicInvokeLambdaPermissions:
+    Condition: DoDBBootStrap
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !Ref DBBootStrapLambdaFn
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref DBSNSTopic
+
+  DBSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: !Sub '${AWS::StackName}-DBBootStrapSnsTopic'
+
+  
+  DBBootStrapLambdaSubscription:
+    Condition: DoDBBootStrap
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: !GetAtt DBBootStrapLambdaFn.Arn
+      Protocol: lambda
+      FilterPolicyScope: MessageAttributes
+      FilterPolicy: { "EventID": [{"string": ["=", "RDS-EVENT-0088"]}] }
+      TopicArn: !Ref DBSNSTopic
+
+  DatabaseInstanceEventSubscription:
+    Type: 'AWS::RDS::EventSubscription'
+    Properties:
+      Enabled: true 
+      SubscriptionName: !Sub '${AWS::StackName}-DBInstanceEventSubscription'
+      EventCategories:
+      - notification
+      SnsTopicArn: !Ref DBSNSTopic
+      SourceIds: 
+      - !Ref AuroraDBFirstInstance
+      - !If [IsReplica, !Ref AuroraDBSecondInstance, !Ref "AWS::NoValue"]
+      SourceType: 'db-instance'
+
+###############################################################################
+# Outputs 
+###############################################################################   
+Outputs:
+  ClusterEndpoint:
+    Description: 'Aurora Cluster/Writer Endpoint'
+    Value: !GetAtt 'AuroraDBCluster.Endpoint.Address'
+  ReaderEndpoint:
+    Description: 'Aurora Reader Endpoint'
+    Value: !GetAtt 'AuroraDBCluster.ReadEndpoint.Address'
+  Port:
+    Description: 'Aurora Endpoint Port'
+    Value: !GetAtt 'AuroraDBCluster.Endpoint.Port'
+  DBUsername:
+    Description: 'Database master username'
+    Value: !Ref DBUsername
+  DBName:
+    Description: 'Database Name'
+    Value: !Ref DBName
+  PSQLCommandLine:    
+    Description: PSQL Command Line
+    Value: !Join
+             - ''
+             - - 'psql --host='
+               - !GetAtt 'AuroraDBCluster.Endpoint.Address' 
+               - ' --port='
+               - !GetAtt 'AuroraDBCluster.Endpoint.Port'
+               - ' --username='
+               - !Ref DBUsername
+               - ' --dbname='
+               - !Ref DBName

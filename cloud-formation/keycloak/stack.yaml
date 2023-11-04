@@ -1,0 +1,481 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Keycloak stack"
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: Name of the project
+
+  EnvironmentName:
+    Type: String
+    Description: An environment name that will be prefixed to resource names
+  
+  VpcId:
+    Type: String
+    Description: VPC ID
+  
+  VpcCidr:
+    Type: String
+    Description: VPC CIDR
+  
+  PublicSubnet1Id:
+    Type: String
+    Description: Public subnet 1 ID
+  
+  PrivateSubnet1Id:
+    Type: String
+    Description: Private subnet 1 ID
+  
+  PrivateSubnet2Id:
+    Type: String
+    Description: Private subnet 2 ID
+  
+  BastionHostSecurityGroupId:
+    Type: String
+    Description: Security group ID of the bastion host
+  
+  InstanceType:
+    Type: String
+    Description: EC2 instance type
+  
+  KeycloakInstanceRootVolumeSize:
+    Type: Number
+    Description: Root volume size for Keycloak instances
+
+  KeycloakAsgName:
+    Type: String
+    Description: Name of the Keycloak ASG
+
+  KeycloakAsgMinSize:
+    Type: Number
+    Description: Minimum number of instances in the Keycloak ASG
+  
+  KeycloakAsgMaxSize:
+    Type: Number
+    Description: Maximum number of instances in the Keycloak ASG
+  
+  KeycloakAsgDesiredCapacity:
+    Type: Number
+    Description: Desired number of instances in the Keycloak ASG
+  
+  AuroraACMCertificateDomainName:
+    Type: String
+    Description: Domain name for the Aurora cluster
+  
+  S3BucketName:
+    Type: String
+    Description: S3 bucket name 
+  
+  KeycloakVersion:
+    Type: String
+    Description: Keycloak version
+
+  KeycloakTopLevelDomain:
+    Type: String
+    Description: Keycloak top level domain
+  
+  KeycloakAlbSubDomainName:
+    Type: String
+    Description: Keycloak ALB domain name
+  
+  AuroraDBClusterName:
+    Type: String
+    Description: Aurora DB cluster name
+  
+  KeycloakAuroraDBSchema:
+    Type: String
+    Description: Keycloak Aurora DB schema
+  
+  KeycloakAuroraDBDatabaseName:
+    Type: String
+    Description: Keycloak Aurora DB database name
+  
+  KeycloakAuroraDBHost:
+    Type: String
+    Description: Keycloak Aurora DB host
+  
+  KeycloakAuroraDBPort:
+    Type: String
+    Description: Keycloak Aurora DB port
+  
+  KeycloakAuroraDBUser:
+    Type: String
+    Description: Keycloak Aurora DB user
+  
+  KeycloakAuroraDBMasterUsername:
+    Type: String
+    Description: Keycloak Aurora DB master username
+
+Resources:
+
+  KeycloakUserAuroraAccessPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - rds-db:connect
+            Resource:
+              - !Sub "arn:aws:rds-db:${AWS::Region}:${AWS::AccountId}:dbuser:${AuroraDBCluster}/${DBUsername}"
+  
+  AWSS3ReadWritePrefixedS3BucketPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      Description: "Allows read and write access to a specific S3 bucket"
+      ManagedPolicyName: "S3ReadWritePolicy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "s3:GetObject"
+              - "s3:PutObject"
+              - "s3:DeleteObject"
+              - "s3:ListBucket"
+            Resource: "arn:aws:s3:::${S3BucketName}/keycloak/*"
+  
+  CreateSecretsManagerPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      Description: "Allows actions on Secrets Manager secrets that start with 'keycloak'"
+      ManagedPolicyName: "SecretsManagerPolicy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "secretsmanager:CreateSecret"
+            Resource:
+              - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/keycloak/*"
+  
+  EC2DescribeInstancesPolicy:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      Description: "Allows describing EC2 instances"
+      ManagedPolicyName: "EC2DescribeInstancesPolicy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "ec2:DescribeInstances"
+            Resource: "*"
+    
+  ASGScalingPolicy:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      Description: "Allows scaling an Auto Scaling Group"
+      ManagedPolicyName: "ASGScalingPolicy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "autoscaling:SetDesiredCapacity"
+            Resource: "*"
+
+  KeycloakInstanceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: keycloak-instance-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "ec2.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - !Ref CreateSecretsManagerPolicy
+        - !Ref AWSS3ReadWritePrefixedS3BucketPolicy
+        - !Ref EC2DescribeInstancesPolicy
+        - !Ref ASGScalingPolicy
+        - !Ref KeycloakUserAuroraAccessPolicy
+
+  KeycloakTopLevelDomainPublicHostedZone:
+    Type: AWS::Route53::HostedZone
+    Properties:
+      Name: !Ref KeycloakTopLevelDomain
+      HostedZoneTags: 
+        - Key: Name
+          Value: !Ref KeycloakTopLevelDomain
+
+  KeycloakSSLCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref KeycloakTopLevelDomain
+      SubjectAlternativeNames:
+        - !Ref KeycloakAlbSubDomainName
+      DomainValidationOptions:
+      - DomainName: !Ref KeycloakTopLevelDomain
+        HostedZoneId: !Ref KeycloakTopLevelDomainPublicHostedZone
+      ValidationMethod: DNS
+
+  # 2. Route 53 Record
+  KeycloakAlbRoute53Record:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneName: !Ref KeycloakTopLevelDomain
+      Comment: CNAME record for Keycloak
+      RecordSets:
+      - Name: !Ref KeycloakAlbSubDomainName
+        Type: A
+        AliasTarget:
+          HostedZoneId: !GetAtt 'KeycloakAlb.CanonicalHostedZoneID'
+          DNSName: !GetAtt 'KeycloakAlb.DNSName'
+  
+  KeycloakAlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Keycloak ALB
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp:
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          DestinationSecurityGroupId: !Ref KeycloakInstanceSecurityGroup
+
+  # 3. ALB Load Balancer with Public and Private Subnets
+  KeycloakAlb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:    
+      IpAddressType: ipv4
+      LoadBalancerAttributes: 
+        - LoadBalancerAttribute
+      Name: keycloak-alb
+      Type: ipv4
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref KeycloakAlbSecurityGroup
+      Subnets:
+        - !Ref PublicSubnet1Id
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      Tags: 
+        - Key: Name
+          Value: keycloak-alb   
+
+  KeycloakAlbTargetGroup:
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    Properties:
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 20
+      HealthCheckPath: /health
+      HealthCheckPort: 8080
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 3
+      IpAddressType: ipv4
+      Matcher: 
+        HttpCode: "200"
+      Name: keycloak-alb-target-group
+      Port: 8080
+      Protocol: HTTP
+      ProtocolVersion: HTTP1
+      TargetGroupAttributes: 
+        - stickiness.enabled: true
+        - stickiness.type: app_cookie
+        - stickiness.app_cookie.cookie_name: AUTH_SESSION_ID
+        - stickiness.app_cookie.duration_seconds: 86400
+      Targets: 
+        - TargetDescription
+      TargetType: instance
+      UnhealthyThresholdCount: 2
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Name
+          Value: keycloak-alb-target-group
+
+  # Define an ALB listener with the target group
+  KeycloakAlbListener:  
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    Properties:
+      LoadBalancerArn: !Ref KeycloakAlb
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref KeycloakSSLCertificate
+      SslPolicy: ELBSecurityPolicy-2016-08
+      DefaultActions:
+        - Type: "forward"
+          TargetGroupArn: !Ref KeycloakAlbTargetGroup
+
+  # 4. Keycloak Key Pair (created here)  
+  KeycloakInstaceKeyPair:
+    Type: AWS::EC2::KeyPair::KeyName
+    Properties:
+      KeyName: keycloakKeyPair
+      
+  # 5. Security Group for Keycloak Instances
+  KeycloakInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Keycloak instances
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          SourceSecurityGroupId: !Ref BastionHostSecurityGroupId
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: !Ref VpcCidr
+        - IpProtocol: tcp
+          FromPort: 8443
+          ToPort: 8443
+          CidrIp: !Ref VpcCidr
+        - IpProtocol: tcp
+          FromPort: 7800
+          ToPort: 7800
+          CidrIp: !Ref VpcCidr
+      SecurityGroupEgress:
+        - IpProtocol: -1 
+          CidrIp: 0.0.0.0/0
+  
+  KeycloakInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: keycloak-instance-profile
+      Roles: 
+        - !Ref KeycloakInstanceRole
+
+  KeycloakPlacementGroup:
+    Type: "AWS::EC2::PlacementGroup"
+    Properties:
+      Strategy: spread
+
+  # 6. Define a Launch Template
+  KeycloakLaunchTemplate:
+    Type: "AWS::EC2::LaunchTemplate"
+    Properties:
+      LaunchTemplateName: "KeycloakLaunchTemplate"
+      LaunchTemplateData:
+        ImageId: ami-0261755bbcb8c4a84 # Ubuntu AWS 20.04 ami
+        InstanceType: !Ref InstanceType
+        KeyName: !Ref KeycloakInstaceKeyPair
+        IamInstanceProfile:
+          Arn: !GetAtt
+            - KeycloakInstanceProfile
+            - Arn
+        SecurityGroupIds:
+          - !Ref KeycloakInstanceSecurityGroup
+        BlockDeviceMappings:
+          - DeviceName: "/dev/xvda"
+            Ebs:
+              VolumeSize: !Ref KeycloakInstanceRootVolumeSize
+              VolumeType: "gp2"
+        Monitoring:
+          Enabled: true
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: keycloak
+        UserData:
+          Fn::Base64:
+           Fn::Base64: !Sub |
+            #!/bin/bash 
+            sudo apt update -y
+            apt install -y jq
+            apt install -y unzip
+
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "/opt/awscliv2.zip"
+            unzip "/opt/awscliv2.zip" -d "/opt"
+            sudo /opt/aws/install
+
+            aws s3 cp s3://${S3BucketName}/ssh/client-key.pub /tmp/client-key.pub
+
+            # Add the key to authorized_keys
+
+            cat /tmp/client-key.pub >> /home/ubuntu/.ssh/authorized_keys
+
+            function is_first_node() {
+              local response=$(aws ec2 describe-instances \
+                                --filters "Name=tag:Name,Values=keycloak" \
+                                --query "Reservations[].Instances" | jq '. | length')
+              if [ -z "${response}" ]; then
+                  echo "No instances found. An error occurred. Exiting."
+                  exit 1
+              elif [ "${response}" -lt "1" ]; then
+                  echo "No instances found. An error occurred. Exiting."
+                  exit 1
+              elif [ "${response}" -eq "1" ]; then
+                  echo "This is the first node."
+                  return 0
+              else
+                  echo "This is not the first node."
+                  return 1
+              fi
+            }
+
+            ### TODO: Handle the case where all nodes are crashed and the ASG is trying to start a new node. ###
+
+            if is_first_node; then
+              echo "Starting first node."
+              aws s3 cp s3://${S3BucketName}/keycloak/keycloak-${KeycloakVersion}/first-node.sh /tmp/first-node.sh
+              chmod +x /tmp/first-node.sh
+              sudo -u ubuntu bash -c "./tmp/first-node.sh \
+                                        ${KeycloakVersion} \
+                                        ${KeycloakAlbSubDomainName} \
+                                        ${KeycloakAuroraDBSchema} \
+                                        ${KeycloakAuroraDBDatabaseName} \
+                                        ${KeycloakAuroraDBHost} \
+                                        ${KeycloakAuroraDBPort} \
+                                        ${KeycloakAuroraDBUser} \
+                                        ${AWS::Region} \
+                                        ${S3BucketName} \
+                                        ${KeycloakAsgName} \
+                                        ${KeycloakAsgDesiredCapacity}"
+            else
+              echo "Starting additional node."
+              aws s3 cp s3://${S3BucketName}/keycloak/keycloak-${KeycloakVersion}joining-node.sh /tmp/joining-node.sh
+              chmod +x /tmp/joining-node.sh
+              sudo -u ubuntu bash -c "./tmp/joining-node.sh \
+                                        ${KeycloakVersion} \
+                                        ${KeycloakAlbSubDomainName} \
+                                        ${KeycloakAuroraDBSchema} \
+                                        ${KeycloakAuroraDBDatabaseName} \
+                                        ${KeycloakAuroraDBHost} \
+                                        ${KeycloakAuroraDBPort} \
+                                        ${KeycloakAuroraDBUser} \
+                                        ${AWS::Region} \
+                                        ${S3BucketName}"
+
+  # 7. Define the Auto Scaling Group
+  KeycloakAutoScalingGroup:
+    Type: "AWS::AutoScaling::AutoScalingGroup"
+    Properties:
+      AutoScalingGroupName: !Ref KeycloakAsgName
+      Cooldown: 300
+      DefaultInstanceWarmup: 180
+      DesiredCapacity: 1
+      DesiredCapacityType: units
+      HealthCheckGracePeriod: 300
+      LaunchTemplate: !Ref KeycloakLaunchTemplate
+      MaxSize: !Ref KeycloakAsgMaxSize
+      MetricsCollection: 
+        - Granularity: 1Minute
+          Metrics: 
+            - GroupInServiceInstances
+            - GroupPendingInstances
+            - GroupStandbyInstances
+            - GroupTerminatingInstances
+            - GroupTotalInstances
+      MinSize: 1
+      NewInstancesProtectedFromScaleIn: true
+      PlacementGroup: !Ref KeycloakPlacementGroup
+      TargetGroupARNs: 
+        - !Ref KeycloakAlbTargetGroup
+      VPCZoneIdentifier: 
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id

@@ -26,7 +26,6 @@ Resources:
     Type: AWS::IAM::Policy
     Properties:
       PolicyName: AwsEbsCsiDriverPolicy
-      Description: Policy for the AWS EBS CSI Driver
       Roles:
         - !Ref ControlPlaneInstanceIAMRole
         - !Ref WorkerInstanceIAMRole
@@ -117,7 +116,6 @@ Resources:
     Type: AWS::IAM::Policy
     Properties:
       PolicyName: S3ReadOnlyAccessPolicy
-      Description: Policy for the S3ReadOnlyAccess
       Roles: 
         - !Ref BastionHostInstanceIAMRole
         - !Ref ControlPlaneInstanceIAMRole
