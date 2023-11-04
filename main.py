@@ -57,13 +57,7 @@ def main(config: Dict[Any, Any]) -> None:
 if __name__ == "__main__":
     config = configure()
     LOGGER = get_logger()
-    #main(config)
-    project_name = config["project"]["name"]
-    environment_name = config["project"]["environment"]["name"]
-    docker_client = DockerClient.from_env()
-    ecr_client = boto3.client('ecr', region_name='us-east-1')
-    repository_name = f"{project_name}/{environment_name}/lambda/dbbootstrap"
-    push_to_ecr(docker_client, ecr_client, f"{LAMBDA_DIR}/dbbootstrap", repository_name)
+    main(config)
     
 
 
