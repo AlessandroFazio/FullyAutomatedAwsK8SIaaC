@@ -7,13 +7,17 @@ Description: 'CloudFormation Template to create Aurora Postgresql Cluster DB Ins
 ###############################################################################
 
 Parameters:
-  EnvironmentType:
-    Type: String
-    Description: The environment tag is used to designate the Environment Stage of the associated AWS resource.
-
   ProjectName:
     Type: String
     Description: The ProjectName tag is used to designate the project name associated with the given AWS resource.
+
+  EnvironmentType:
+    Type: String
+    Description: The environment tag is used to designate the Environment Stage of the associated AWS resource.
+  
+  StackName:
+    Type: String
+    Description: The StackName tag is used to designate the Stack Name associated with the given AWS resource.
   
   VpcCidr:
     Type: String
@@ -35,7 +39,7 @@ Parameters:
     Type: String
     Description: The BastionHostSecurityGroupId tag is used to designate the Bastion Host Security Group ID associated with the given AWS resource.
     
-  DBName:
+  MasterDBName:
     Description: Database Name
     Type: String
 
@@ -43,7 +47,7 @@ Parameters:
     Description: TCP/IP Port for the Database Instance
     Type: Number
     
-  DBUsername:
+  MasterDBUsername:
     Description: Database master username
     Type: String
      
@@ -187,7 +191,7 @@ Resources:
   RDSDBClusterParameterGroup:
     Type: AWS::RDS::DBClusterParameterGroup
     Properties:
-      Description: !Join [ "- ", [ "Aurora PG Cluster Parameter Group for  Cloudformation Stack ", !Ref DBName ] ]
+      Description: !Join [ "- ", [ "Aurora PG Cluster Parameter Group for  Cloudformation Stack ", !Ref MasterDBName ] ]
       Family: !FindInMap [DBFamilyMap, !Ref DBEngineVersion, "family"] 
       Parameters:
         rds.force_ssl: 1
@@ -195,7 +199,7 @@ Resources:
   DBParamGroup:
     Type: AWS::RDS::DBParameterGroup
     Properties:
-      Description: !Join [ "- ", [ "Aurora PG Database Instance Parameter Group for Cloudformation Stack ", !Ref DBName ] ]
+      Description: !Join [ "- ", [ "Aurora PG Database Instance Parameter Group for Cloudformation Stack ", !Ref MasterDBName ] ]
       Family: !FindInMap [DBFamilyMap, !Ref DBEngineVersion, "family"] 
       Parameters:
         shared_preload_libraries: auto_explain,pg_stat_statements,pg_hint_plan,pgaudit
@@ -269,7 +273,7 @@ Resources:
           Key: StackID
           Value: !Ref 'AWS::StackId'
       GenerateSecretString:
-        SecretStringTemplate: !Join ['', ['{"username": "', !Ref DBUsername, '"}']]
+        SecretStringTemplate: !Join ['', ['{"username": "', !Ref MasterDBUsername, '"}']]
         GenerateStringKey: "password"
         ExcludeCharacters: '"@/\'
         PasswordLength: 16
@@ -304,7 +308,7 @@ Resources:
     Properties:
       Engine: aurora-postgresql
       EngineVersion: !Ref DBEngineVersion
-      DatabaseName: !If [IsUseDBSnapshot, !Ref "AWS::NoValue", !Ref DBName]
+      DatabaseName: !If [ IsUseDBSnapshot, !Ref "AWS::NoValue", !Ref MasterDBName ]
       Port: !Ref DBPort
       MasterUsername:
         !If [IsUseDBSnapshot, !Ref "AWS::NoValue", !Join ['', ['{{resolve:secretsmanager:', !Ref AuroraMasterSecret, ':SecretString:username}}' ]]]
@@ -497,7 +501,6 @@ Resources:
     Properties:
       DisplayName: !Sub '${AWS::StackName}-DBBootStrapSnsTopic'
 
-  
   DBBootStrapLambdaSubscription:
     Condition: DoDBBootStrap
     Type: AWS::SNS::Subscription
@@ -534,10 +537,10 @@ Outputs:
   Port:
     Description: 'Aurora Endpoint Port'
     Value: !GetAtt 'AuroraDBCluster.Endpoint.Port'
-  DBUsername:
+  MasterDBUsername:
     Description: 'Database master username'
     Value: !Ref DBUsername
-  DBName:
+  MasterDBName:
     Description: 'Database Name'
     Value: !Ref DBName
   PSQLCommandLine:    

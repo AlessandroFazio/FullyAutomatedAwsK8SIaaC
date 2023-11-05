@@ -27,7 +27,6 @@ Parameters:
   S3BucketName:
     Description: Please enter the name for the S3BucketName
     Type: String
-    Default: my-k8s-cluster-bucket
     MinLength: 5
     MaxLength: 75
 
@@ -164,7 +163,132 @@ Parameters:
     Default: 8
     MinValue: 8
     MaxValue: 100
+
+  AuroraMasterDBName:
+    Description: Please enter the name for the DBName
+    Type: String
+    Default: postgres
+    MinLength: 1
+    MaxLength: 20
+
+  AuroraDBPort:
+    Description: Please enter the port for the DBPort
+    Type: Number
+    Default: 5432
+    MinValue: 1
+    MaxValue: 65535
+
+  AuroraMasterDBUsername:
+    Description: Please enter the username for the DBUsername
+    Type: String
+    Default: postgres
+    MinLength: 1
+    MaxLength: 30
+
+  AuroraDBEngineVersion:
+    Description: Please enter the engine version for the DBEngineVersion
+    Type: String
+    Default: 10.7
+    MinLength: 1
+    MaxLength: 20
+
+  AuroraDBInstanceClass:
+    Description: Please enter the instance class for the DBInstanceClass
+    Type: String
+    Default: db.t3.medium
+    MinLength: 1
+    MaxLength: 20
+
+  AuroraDBSnapshotName:
+    Description: Please enter the snapshot name for the DBSnapshotName
+    Type: String
+
+  AuroraDBBootStrapLambdaRepositoryName:
+    Description: Please enter the repository name for the DBBootStrapLambdaRepositoryName
+    Type: String
+    MinLength: 1
+    MaxLength: 20
+
+  AuroraDBBootStrapLambdaImageUri:
+    Description: Please enter the image uri for the DBBootStrapLambdaImageUri
+    Type: String
+    MinLength: 1
+    MaxLength: 100
   
+  KeycloakCacheS3BucketName:
+    Description: Please enter the name for the KeycloakS3CacheBucketName
+    Type: String
+    MinLength: 1
+    MaxLength: 20
+  
+  KeycloakInstanceType:
+    Description: Please enter the instance type for the KeycloakInstanceType
+    Type: String
+    Default: t3.medium
+  
+  KeycloakInstanceRootVolumeSize:
+    Description: Please enter the root volume size for the KeycloakInstanceRootVolumeSize
+    Type: Number
+    Default: 16
+    MinValue: 16
+    MaxValue: 100
+  
+  KeycloakAsgMaxSize:
+    Description: Please enter the max size for the KeycloakAsgMaxSize
+    Type: Number
+    Default: 5
+    MinValue: 1
+    MaxValue: 10
+  
+  KeycloakAsgDesiredCapacity:
+    Description: Please enter the desired capacity for the KeycloakAsgDesiredCapacity
+    Type: Number
+    Default: 2
+    MinValue: 1
+    MaxValue: 10
+  
+  KeycloakVersion:
+    Description: Please enter the version for the KeycloakVersion
+    Type: String
+    Default: 22.0.5
+    MinLength: 1
+    MaxLength: 20
+  
+  KeycloakTopLevelDomain:
+    Description:  Please enter the top level domain for the KeycloakTopLevelDomain
+    Type: String
+    Default: keycloak-example.com
+    MinLength: 1
+    MaxLength: 40
+  
+  KeycloakAlbSubDomainName:
+    Description: Please enter the sub domain name for the KeycloakAlbSubDomainName
+    Type: String
+    Default: test.keycloak-example.com
+    MinLength: 1
+    MaxLength: 20
+  
+  KeycloakAuroraDBUser:
+    Description: Please enter the user for the KeycloakAuroraDBUser
+    Type: String
+    Default: keycloak
+    MinLength: 1
+    MaxLength: 20
+  
+  KeycloakAuroraDBSchema:
+    Description: Please enter the schema for the KeycloakAuroraDBSchema
+    Type: String
+    Default: keycloak
+    MinLength: 1
+    MaxLength: 20
+  
+  KeycloakAuroraDBDatabaseName:
+    Description: Please enter the database name for the KeycloakAuroraDBDatabaseName
+    Type: String
+    Default: keycloak
+    MinLength: 1
+    MaxLength: 20
+
   ControlPlaneAutoScalingGroupName:
     Description: Please enter the name for the ControlPlaneAsgName
     Type: String
@@ -234,7 +358,7 @@ Resources:
   VpcStack:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formation/vpc/stack.yaml
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cf_templates/vpc/stack.yaml
       Parameters:
         ProjectName: !Ref ProjectName
         EnvironmentName: !Ref EnvironmentName
@@ -249,7 +373,7 @@ Resources:
   PolicyRoleStack:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formation/policy-role/stack.yaml
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cf_templates/policy-role/stack.yaml
       Parameters:
         ProjectName: !Ref ProjectName
         EnvironmentName: !Ref EnvironmentName
@@ -263,7 +387,7 @@ Resources:
       - VpcStack
       - PolicyRoleStack
     Properties:
-      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formation/bastion-host/stack.yaml
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cf_templates/bastion-host/stack.yaml
       Parameters:
         ProjectName: !Ref ProjectName
         EnvironmentName: !Ref EnvironmentName
@@ -277,12 +401,75 @@ Resources:
         PublicSubnet1Id: !GetAtt VpcStack.Outputs.PublicSubnet1Id
         HomeInternetRouterIp: !Ref HomeInternetRouterIp
   
+  AuroraStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - VpcStack
+      - BastionHostStack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cf_templates/aurora/stack.yaml
+      Parameters:
+        ProjectName: !Ref ProjectName 
+        EnvironmentName: !Ref EnvironmentName 
+        StackName: !Ref BastionHostStackName 
+        VpcId: !GetAtt VpcStack.Outputs.VpcId 
+        VpcCIDR: !GetAtt VpcStack.Outputs.VpcCIDR 
+        PrivateSubnet1Id: !GetAtt VpcStack.Outputs.PrivateSubnet1Id 
+        PrivateSubnet2Id: !GetAtt VpcStack.Outputs.PrivateSubnet2Id 
+        BastionHostSecurityGroupId: !GetAtt BastionHostStack.Outputs.BastionHostSecurityGroupId 
+        MasterDBName: !Ref AuroraMasterDBName
+        MasterDBUsername: !Ref AuroraMasterDBUsername
+        DBPort: !Ref AuroraDBPort
+        DBEngineVersion: !Ref AuroraDBEngineVersion
+        DBInstanceClass: !Ref AuroraDBInstanceClass
+        DBSnapshotName: !Ref AuroraDBSnapshotName
+        DBBootStrapLambdaRepositoryName: !Ref DBBootStrapLambdaRepositoryName
+        DBBootStrapLambdaImageUri: !Ref DBBootStrapLambdaImageUri
+        LambdaBootStrapSQLStatementS3Bucket: !Ref S3BucketName 
+        LambdaBootStrapSQLStatementS3Key: scripts/sql/init.sql 
+  
+  KeycloakStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - VpcStack
+      - BastionHostStack
+      - AuroraStack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cf_templates/keycloak/stack.yaml
+      Parameters:
+        ProjectName: !Ref ProjectName
+        EnvironmentName: !Ref EnvironmentName
+        StackName: !Ref BastionHostStackName
+        VpcId: !GetAtt VpcStack.Outputs.VpcId
+        VpcCIDR: !GetAtt VpcStack.Outputs.VpcCIDR
+        PublicSubnet1Id: !GetAtt VpcStack.Outputs.PublicSubnet1Id
+        PrivateSubnet1Id: !GetAtt VpcStack.Outputs.PrivateSubnet1Id
+        PrivateSubnet2Id: !GetAtt VpcStack.Outputs.PrivateSubnet2Id
+        BastionHostSecurityGroupId: !GetAtt BastionHostStack.Outputs.BastionHostSecurityGroupId
+        MainS3BucketName: !Ref S3BucketName
+        CacheS3BucketName: !Ref KeycloakCacheS3BucketName
+        KeycloakInstanceType: !Ref KeycloakInstanceType
+        KeycloakInstanceRootVolumeSize: !Ref KeycloakInstanceRootVolumeSize
+        KeycloakAsgName: keycloak-asg
+        KeycloakAsgMinSize: 1
+        KeycloakAsgMaxSize: !Ref KeycloakAsgMaxSize
+        KeycloakAsgDesiredCapacity: !Ref KeycloakAsgDesiredCapacity
+        KeycloakVersion: !Ref KeycloakVersion
+        KeycloakTopLevelDomain: !Ref KeycloakTopLevelDomain
+        KeycloakAlbSubDomainName: !Ref KeycloakAlbSubDomainName
+        AuroraDBHost: !GetAtt AuroraStack.Outputs.ClusterEndpoint
+        AuroraDBPort: !Ref AuroraDBPort
+        KeycloakAuroraDBUser: !Ref KeycloakAuroraDBUser
+        KeycloakAuroraDBSchema: !Ref KeycloakAuroraDBSchema
+        KeycloakAuroraDBDatabaseName: !Ref KeycloakAuroraDBDatabaseName
+  
   ControlPlaneStack:
     Type: AWS::CloudFormation::Stack
     DependsOn:
       - VpcStack
       - BastionHostStack
       - PolicyRoleStack
+      - KeycloakStack
     Properties:
       TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formation/controlplane/stack.yaml
       Parameters:
@@ -316,6 +503,7 @@ Resources:
         - VpcStack
         - BastionHostStack
         - PolicyRoleStack
+        - KeycloakStack
         - ControlPlaneStack
       Properties:
         TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formation/worker/stack.yaml

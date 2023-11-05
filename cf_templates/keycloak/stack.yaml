@@ -10,6 +10,10 @@ Parameters:
     Type: String
     Description: An environment name that will be prefixed to resource names
   
+  StackName:
+    Type: String
+    Description: An environment name that will be prefixed to resource names
+  
   VpcId:
     Type: String
     Description: VPC ID
@@ -34,7 +38,15 @@ Parameters:
     Type: String
     Description: Security group ID of the bastion host
   
-  InstanceType:
+  MainS3BucketName:
+    Type: String
+    Description: S3 bucket name
+  
+  CacheS3BucketName:
+    Type: String
+    Description: S3 bucket name 
+  
+  KeycloakInstanceType:
     Type: String
     Description: EC2 instance type
   
@@ -58,14 +70,6 @@ Parameters:
     Type: Number
     Description: Desired number of instances in the Keycloak ASG
   
-  AuroraACMCertificateDomainName:
-    Type: String
-    Description: Domain name for the Aurora cluster
-  
-  S3BucketName:
-    Type: String
-    Description: S3 bucket name 
-  
   KeycloakVersion:
     Type: String
     Description: Keycloak version
@@ -78,9 +82,17 @@ Parameters:
     Type: String
     Description: Keycloak ALB domain name
   
-  AuroraDBClusterName:
+  AuroraDBHost:
     Type: String
-    Description: Aurora DB cluster name
+    Description: Keycloak Aurora DB host
+  
+  AuroraDBPort:
+    Type: String
+    Description: Keycloak Aurora DB port
+  
+  KeycloakAuroraDBUser:
+    Type: String
+    Description: Keycloak Aurora DB user
   
   KeycloakAuroraDBSchema:
     Type: String
@@ -89,22 +101,6 @@ Parameters:
   KeycloakAuroraDBDatabaseName:
     Type: String
     Description: Keycloak Aurora DB database name
-  
-  KeycloakAuroraDBHost:
-    Type: String
-    Description: Keycloak Aurora DB host
-  
-  KeycloakAuroraDBPort:
-    Type: String
-    Description: Keycloak Aurora DB port
-  
-  KeycloakAuroraDBUser:
-    Type: String
-    Description: Keycloak Aurora DB user
-  
-  KeycloakAuroraDBMasterUsername:
-    Type: String
-    Description: Keycloak Aurora DB master username
 
 Resources:
 
@@ -118,7 +114,7 @@ Resources:
             Action:
               - rds-db:connect
             Resource:
-              - !Sub "arn:aws:rds-db:${AWS::Region}:${AWS::AccountId}:dbuser:${AuroraDBCluster}/${DBUsername}"
+              - !Sub "arn:aws:rds-db:${AWS::Region}:${AWS::AccountId}:dbuser:*/${KeycloakAuroraDBUser}"
   
   AWSS3ReadWritePrefixedS3BucketPolicy:
     Type: "AWS::IAM::Policy"
@@ -134,7 +130,14 @@ Resources:
               - "s3:PutObject"
               - "s3:DeleteObject"
               - "s3:ListBucket"
-            Resource: "arn:aws:s3:::${S3BucketName}/keycloak/*"
+            Resource: "arn:aws:s3:::${CacheS3BucketName}/*"
+          - Effect: "Allow"
+            Action:
+              - "s3:ListBucket"
+              - "s3:GetObject"
+            Resource: 
+              - "arn:aws:s3:::${MainS3BucketName}/scripts/keycloak/*"
+              - "arn:aws:s3:::${MainS3BucketName}/ssh/*"
   
   CreateSecretsManagerPolicy:
     Type: "AWS::IAM::Policy"
@@ -174,7 +177,7 @@ Resources:
           - Effect: "Allow"
             Action:
               - "autoscaling:SetDesiredCapacity"
-            Resource: "*"
+            Resource: "arn:aws:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/${KeycloakAsgName}"
 
   KeycloakInstanceRole:
     Type: "AWS::IAM::Role"
@@ -361,7 +364,7 @@ Resources:
       LaunchTemplateName: "KeycloakLaunchTemplate"
       LaunchTemplateData:
         ImageId: ami-0261755bbcb8c4a84 # Ubuntu AWS 20.04 ami
-        InstanceType: !Ref InstanceType
+        InstanceType: !Ref KeycloakInstanceType
         KeyName: !Ref KeycloakInstaceKeyPair
         IamInstanceProfile:
           Arn: !GetAtt
@@ -393,7 +396,7 @@ Resources:
             unzip "/opt/awscliv2.zip" -d "/opt"
             sudo /opt/aws/install
 
-            aws s3 cp s3://${S3BucketName}/ssh/client-key.pub /tmp/client-key.pub
+            aws s3 cp s3://${MainS3BucketName}/ssh/client-key.pub /tmp/client-key.pub
 
             # Add the key to authorized_keys
 
@@ -422,34 +425,34 @@ Resources:
 
             if is_first_node; then
               echo "Starting first node."
-              aws s3 cp s3://${S3BucketName}/keycloak/keycloak-${KeycloakVersion}/first-node.sh /tmp/first-node.sh
+              aws s3 cp s3://${MainS3BucketName}/scripts/keycloak/first-node.sh /tmp/first-node.sh
               chmod +x /tmp/first-node.sh
               sudo -u ubuntu bash -c "./tmp/first-node.sh \
                                         ${KeycloakVersion} \
                                         ${KeycloakAlbSubDomainName} \
                                         ${KeycloakAuroraDBSchema} \
                                         ${KeycloakAuroraDBDatabaseName} \
-                                        ${KeycloakAuroraDBHost} \
-                                        ${KeycloakAuroraDBPort} \
+                                        ${AuroraDBHost} \
+                                        ${AuroraDBPort} \
                                         ${KeycloakAuroraDBUser} \
                                         ${AWS::Region} \
-                                        ${S3BucketName} \
+                                        ${CacheS3BucketName} \
                                         ${KeycloakAsgName} \
                                         ${KeycloakAsgDesiredCapacity}"
             else
               echo "Starting additional node."
-              aws s3 cp s3://${S3BucketName}/keycloak/keycloak-${KeycloakVersion}joining-node.sh /tmp/joining-node.sh
+              aws s3 cp s3://${MainS3BucketName}/scripts/keycloak/joining-node.sh /tmp/joining-node.sh
               chmod +x /tmp/joining-node.sh
               sudo -u ubuntu bash -c "./tmp/joining-node.sh \
                                         ${KeycloakVersion} \
                                         ${KeycloakAlbSubDomainName} \
                                         ${KeycloakAuroraDBSchema} \
                                         ${KeycloakAuroraDBDatabaseName} \
-                                        ${KeycloakAuroraDBHost} \
-                                        ${KeycloakAuroraDBPort} \
+                                        ${AuroraDBHost} \
+                                        ${AuroraDBPort} \
                                         ${KeycloakAuroraDBUser} \
                                         ${AWS::Region} \
-                                        ${S3BucketName}"
+                                        ${CacheS3BucketName}"
 
   # 7. Define the Auto Scaling Group
   KeycloakAutoScalingGroup:

@@ -1,6 +1,6 @@
 DEFAULT_CONFIG="config/default.yaml"
 SCRIPTS_DIR="scripts"
-TEMPLATES_DIR="cloud-formation"
+TEMPLATES_DIR="cf_templates"
 LAMBDA_DIR="lambda"
 CLOUDFORMATION_CAPABILITIES = {
     "CAPABILITY_IAM",
