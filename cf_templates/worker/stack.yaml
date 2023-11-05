@@ -54,10 +54,6 @@ Parameters:
   KubernetesVersion:
     Type: String
     Description: The Kubernetes version
-  
-  WorkerInstanceProfileArn:
-    Type: String
-    Description: The ARN of the IAM instance profile for the worker nodes
 
   WorkerInstanceType:
     Type: String
@@ -84,6 +80,85 @@ Parameters:
     Description: The name of the S3 bucket where the scripts are stored
 
 Resources:
+
+  EcrPrivateRepositoryPullOnlyPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: EcrPrivateRepositoryPullOnlyPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: VisualEditor0
+            Effect: Allow
+            Action:
+              - ecr:GetAuthorizationToken
+              - ecr:BatchCheckLayerAvailability
+              - ecr:GetDownloadUrlForLayer
+              - ecr:GetRepositoryPolicy
+              - ecr:DescribeRepositories
+              - ecr:ListImages
+              - ecr:BatchGetImage
+            Resource: "*"
+
+  S3BucketAccessPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: WorkerS3BucketAccessPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "s3:GetObject"
+              - "s3:ListBucket"
+              - "s3:DescribeBucket"
+            Resource:
+              - Fn::Sub: arn:aws:s3:::${S3BucketName}/*
+
+  KMSAccessPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: WorkerKMSAccessPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "kms:DescribeKey"
+              - "kms:GetKeyPolicy"
+              - "kms:GetKeyRotationStatus"
+            Resource:
+              - "*"
+  
+  WorkerInstanceIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: WorkerInstanceIAMRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - !Ref EcrPrivateRepositoryPullOnlyPolicy
+        - !Ref S3BucketAccessPolicy
+        - !Ref KMSAccessPolicy
+      Tags:
+        - Key: Name
+          Value: WorkerInstanceIAMRole
+  
+  WorkerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: WorkerInstanceProfile
+      Roles:
+        - !Ref WorkerInstanceIAMRole
+
   WorkersSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -174,7 +249,7 @@ Resources:
         ImageId: ami-0261755bbcb8c4a84 # Ubuntu AWS 20.04 ami
         InstanceType: !Ref WorkerInstanceType
         IamInstanceProfile:
-          Arn: !Ref WorkerInstanceProfileArn
+          Arn: !GetAtt WorkerInstanceProfile.Arn
           Name: WorkerInstanceProfile
         KeyName: !GetAtt WorkerKeyPair.KeyName
         SecurityGroupIds:

@@ -89,11 +89,25 @@ Parameters:
     Default: BastionHost 
     MinLength: 1
     MaxLength: 20 
-  
-  PolicyRoleStackName:
-    Description: Please enter the name for the PolicyRoleStackName
+
+  AuroraStackName:
+    Description: Please enter the name for the AuroraStackName
     Type: String
-    Default: PolicyRole
+    Default: Aurora
+    MinLength: 1
+    MaxLength: 20
+  
+  KeycloakStackName:
+    Description: Please enter the name for the KeycloakStackName
+    Type: String
+    Default: Keycloak
+    MinLength: 1
+    MaxLength: 20
+
+  IRSAStackName:
+    Description: Please enter the name for the IRSAStackName
+    Type: String
+    Default: IRSA
     MinLength: 1
     MaxLength: 20
 
@@ -370,22 +384,10 @@ Resources:
         PrivateSubnet3CIDR: !Ref PrivateSubnet3CIDR
         AvailabilityZones: !Ref AvailabilityZones
   
-  PolicyRoleStack:
-    Type: AWS::CloudFormation::Stack
-    Properties:
-      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cf_templates/policy-role/stack.yaml
-      Parameters:
-        ProjectName: !Ref ProjectName
-        EnvironmentName: !Ref EnvironmentName
-        StackName: !Ref PolicyRoleStackName
-        S3BucketName: !Ref S3BucketName
-        K8sClusterName: !Ref K8sClusterName
-  
   BastionHostStack:
     Type: AWS::CloudFormation::Stack
     DependsOn:
       - VpcStack
-      - PolicyRoleStack
     Properties:
       TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cf_templates/bastion-host/stack.yaml
       Parameters:
@@ -395,7 +397,6 @@ Resources:
         S3BucketName: !Ref S3BucketName
         BastionHostInstanceType: !Ref BastionHostInstanceType
         BastionHostRootVolumeSize: !Ref BastionHostRootVolumeSize
-        BastionHostInstanceProfileArn: !GetAtt PolicyRoleStack.Outputs.BastionHostInstanceProfileArn
         VpcId: !GetAtt VpcStack.Outputs.VpcId
         VpcCIDR: !GetAtt VpcStack.Outputs.VpcCIDR
         PublicSubnet1Id: !GetAtt VpcStack.Outputs.PublicSubnet1Id
@@ -411,7 +412,7 @@ Resources:
       Parameters:
         ProjectName: !Ref ProjectName 
         EnvironmentName: !Ref EnvironmentName 
-        StackName: !Ref BastionHostStackName 
+        StackName: !Ref AuroraStackName
         VpcId: !GetAtt VpcStack.Outputs.VpcId 
         VpcCIDR: !GetAtt VpcStack.Outputs.VpcCIDR 
         PrivateSubnet1Id: !GetAtt VpcStack.Outputs.PrivateSubnet1Id 
@@ -431,15 +432,13 @@ Resources:
   KeycloakStack:
     Type: AWS::CloudFormation::Stack
     DependsOn:
-      - VpcStack
-      - BastionHostStack
       - AuroraStack
     Properties:
       TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cf_templates/keycloak/stack.yaml
       Parameters:
         ProjectName: !Ref ProjectName
         EnvironmentName: !Ref EnvironmentName
-        StackName: !Ref BastionHostStackName
+        StackName: !Ref KeycloakStackName
         VpcId: !GetAtt VpcStack.Outputs.VpcId
         VpcCIDR: !GetAtt VpcStack.Outputs.VpcCIDR
         PublicSubnet1Id: !GetAtt VpcStack.Outputs.PublicSubnet1Id
@@ -463,15 +462,31 @@ Resources:
         KeycloakAuroraDBSchema: !Ref KeycloakAuroraDBSchema
         KeycloakAuroraDBDatabaseName: !Ref KeycloakAuroraDBDatabaseName
   
+  IRSAStack:
+    Type: AWS::CloudFormation::Stack
+    DeoendsOn:
+      - KeycloakStack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cf_templates/irsa/stack.yaml
+        ProjectName: !Ref ProjectName
+        EnvironmentName: !Ref EnvironmentName
+        StackName: !Ref IRSAStackName
+        OidcProviderUrl: !Ref KeycloakAlbSubDomainName
+        EbsCsiDriverSa: !Ref IRSAEbsCsiDriverSa
+        EbsCsiDriverSaNamespace: !Ref IRSAEbsCsiDriverSaNamespace
+        AwsCloudProviderSa: !Ref IRSAAwsCloudProviderSa
+        AwsCloudProviderSaNamespace: !Ref IRSAAwsCloudProviderSaNamespace
+        AwsLoadBalancerControllerSa: !Ref IRSAAwsLoadBalancerControllerSa
+        AwsLoadBalancerControllerSaNamespace: !Ref IRSAAwsLoadBalancerControllerSaNamespace
+        ClusterAutoScalerSa: !Ref IRSAClusterAutoScalerSa
+        ClusterAutoScalerSaNamespace: !Ref IRSAClusterAutoScalerSaNamespace
+  
   ControlPlaneStack:
     Type: AWS::CloudFormation::Stack
     DependsOn:
-      - VpcStack
-      - BastionHostStack
-      - PolicyRoleStack
-      - KeycloakStack
+      - IRSAStack
     Properties:
-      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formation/controlplane/stack.yaml
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-cf_templates/controlplane/stack.yaml
       Parameters:
         ProjectName: !Ref ProjectName
         EnvironmentName: !Ref EnvironmentName
@@ -489,7 +504,6 @@ Resources:
         ClusterServicesNetworkCidr: !Ref ClusterServicesNetworkCidr
         ClusterDefaultDns: !Ref ClusterDefaultDns
         KubernetesVersion: !Ref KubernetesVersion
-        ControlPlaneInstanceProfileArn: !GetAtt PolicyRoleStack.Outputs.ControlPlaneInstanceProfileArn
         ControlPlaneAutoScalingGroupName: !Ref ControlPlaneAutoScalingGroupName
         ControlPlaneAutoScalingGroupDesiredCapacity: !Ref ControlPlaneAutoScalingGroupDesiredCapacity
         ControlPlaneAutoScalingGroupMaxSize: !Ref ControlPlaneAutoScalingGroupMaxSize
@@ -500,13 +514,9 @@ Resources:
   WorkerStack:
       Type: AWS::CloudFormation::Stack
       DependsOn:
-        - VpcStack
-        - BastionHostStack
-        - PolicyRoleStack
-        - KeycloakStack
         - ControlPlaneStack
       Properties:
-        TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cloud-formation/worker/stack.yaml
+        TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cf_templates/worker/stack.yaml
         Parameters:
           ProjectName: !Ref ProjectName
           EnvironmentName: !Ref EnvironmentName
@@ -521,7 +531,6 @@ Resources:
           K8sClusterName: !Ref K8sClusterName
           K8sNodesHostnameMode: !Ref K8sNodesHostnameMode
           KubernetesVersion: !Ref KubernetesVersion
-          WorkerInstanceProfileArn: !GetAtt PolicyRoleStack.Outputs.WorkerInstanceProfileArn
           WorkerSubnet1AutoScalingGroupMaxSize: !Ref WorkerSubnet1AutoScalingGroupMaxSize
           WorkerSubnet2AutoScalingGroupMaxSize: !Ref WorkerSubnet2AutoScalingGroupMaxSize
           WorkerSubnet3AutoScalingGroupMaxSize: !Ref WorkerSubnet3AutoScalingGroupMaxSize

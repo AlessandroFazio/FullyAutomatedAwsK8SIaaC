@@ -39,11 +39,7 @@ Parameters:
   HomeInternetRouterIp:
     Type: String
     Description: Please enter the IP address of your home internet router
-  
-  BastionHostInstanceProfileArn:
-    Type: String
-    Description: Please enter the ARN of the IAM instance profile for the bastion host
-  
+
   BastionHostInstanceType:
     Description: Please enter Bastion Host Instance Type
     Type: String
@@ -53,6 +49,49 @@ Parameters:
     Type: Number
 
 Resources:
+
+  S3BucketAccessPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: BastionHostS3BucketAccessPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "s3:GetObject"
+              - "s3:ListBucket"
+              - "s3:DescribeBucket"
+            Resource:
+              - Fn::Sub: arn:aws:s3:::${S3BucketName}/*
+  
+  BastionHostInstanceIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: BastionHostInstanceIAMRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - !Ref S3BucketAccessPolicy
+      Tags:
+        - Key: Name
+          Value: BastionHostInstanceIAMRole
+  
+  BastionHostInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: BastionHostInstanceProfile
+      Roles:
+        - !Ref BastionHostInstanceIAMRole
+
   BastionHostKeyPair:
    Type: 'AWS::EC2::KeyPair'
    Properties:
@@ -89,7 +128,7 @@ Resources:
         SecurityGroupIds:
           - !Ref BastionHostSecurityGroup
         IamInstanceProfile:
-          Arn: !Ref BastionHostInstanceProfileArn
+          Arn: !GetAtt BastionHostInstanceProfile.Arn
           Name: BastionHostInstanceProfile
         BlockDeviceMappings:
           - DeviceName: /dev/sda1

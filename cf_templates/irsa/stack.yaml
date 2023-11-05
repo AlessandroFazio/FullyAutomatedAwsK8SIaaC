@@ -12,16 +12,72 @@ Parameters:
   StackName:
     Type: String
     Description: Name of the stack
-
-  K8sClusterName:
+  
+  OidcProviderUrl:
     Type: String
-    Description: Please enter the name for the K8sClusterName
-
-  S3BucketName:
+    Description: Please enter the OidcProviderUrl
+  
+  EbsCsiDriverSa:
     Type: String
-    Description: Please enter the name for the S3BucketName
+    Description: Please enter the EbsCsiDriverSa
+  
+  EbsCsiDriverSaNamespace:
+    Type: String
+    Description: Please enter the EbsCsiDriverSaNamespace
+  
+  AwsCloudProviderSa:
+    Type: String
+    Description: Please enter the AwsCloudProviderSa
+  
+  AwsCloudProviderSaNamespace:
+    Type: String
+    Description: Please enter the AwsCloudProviderSaNamespace
+  
+  AwsLoadBalancerControllerSa:
+    Type: String
+    Description: Please enter the AwsLoadBalancerControllerSa
+  
+  AwsLoadBalancerControllerSaNamespace:
+    Type: String
+    Description: Please enter the AwsLoadBalancerControllerSaNamespace
+  
+  ClusterAutoScalerSa:
+    Type: String
+    Description: Please enter the ClusterAutoScalerSa
+  
+  ClusterAutoScalerSaNamespace:
+    Type: String
+    Description: Please enter the ClusterAutoScalerSaNamespace
+
 
 Resources:
+
+  OIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: !Ref OidcProviderUrl
+      ClientIDList:
+        - sts.amazonaws.com
+
+  EbsCsiDriverIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: EbsCsiDriverRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/${OIDCProvider}"
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                "${OIDCProvider}:aud": "sts.amazonaws.com"
+                "${OIDCProvider:sub": !Sub "system:serviceaccount:${EbsCsiDriverSaNamespace}:${EbsCsiDriverSa}"
+      Path: /
+      Policies:
+        - !Ref EbsCsiDriverPolicy
+
   AwsEbsCsiDriverPolicy:
     Type: AWS::IAM::Policy
     Properties:
@@ -112,48 +168,29 @@ Resources:
               StringLike:
                 "ec2:ResourceTag/ebs.csi.aws.com/cluster": "true"
 
-  S3ReadOnlyAccessPolicy:
-    Type: AWS::IAM::Policy
+  AwsCloudProviderIAMRole:
+    Type: AWS::IAM::Role
     Properties:
-      PolicyName: S3ReadOnlyAccessPolicy
-      Roles: 
-        - !Ref BastionHostInstanceIAMRole
-        - !Ref ControlPlaneInstanceIAMRole
-        - !Ref WorkerInstanceIAMRole
-      PolicyDocument:
+      RoleName: AwsCloudProviderRole
+      AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
           - Effect: Allow
-            Action:
-              - s3:Get*
-              - s3:List*
-              - s3:Describe*
-            Resource:
-              - Fn::Sub: arn:aws:s3:::${S3BucketName}
-              - Fn::Sub: arn:aws:s3:::${S3BucketName}/*
+            Principal:
+              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/${OIDCProvider}"
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                "${OIDCProvider}:aud": "sts.amazonaws.com"
+                "${OIDCProvider:sub": !Sub "system:serviceaccount:${AwsCloudProviderSaNamespace}:${AwsCloudProviderSa}"
+      Path: /
+      Policies:
+        - !Ref AwsCloudProviderPolicy
 
-  S3WriteOnlyAccessPolicy:
+  AwsCloudProviderPolicy:
     Type: AWS::IAM::Policy
     Properties:
-      PolicyName: S3WriteOnlyAccessPolicy
-      Roles: 
-        - !Ref ControlPlaneInstanceIAMRole
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Action:
-              - s3:PutObject
-            Resource:
-              - Fn::Sub: arn:aws:s3:::${S3BucketName}
-              - Fn::Sub: arn:aws:s3:::${S3BucketName}/*
-
-  ControlPlaneAwsCloudProviderPolicy:
-    Type: AWS::IAM::Policy
-    Properties:
-      PolicyName: ControlPlaneAwsCloudProviderPolicy
-      Roles:
-        - !Ref ControlPlaneInstanceIAMRole
+      PolicyName: AwsCloudProviderPolicy
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -217,36 +254,30 @@ Resources:
               - kms:DescribeKey
             Resource:
               - "*"
-
-  EcrPrivateRepositoryPullOnlyPolicy:
-    Type: AWS::IAM::Policy
+  
+  AwsLoadBalancerControllerIAMRole:
+    Type: AWS::IAM::Role
     Properties:
-      PolicyName: EcrPrivateRepositoryPullOnlyPolicy
-      Roles:
-        - !Ref ControlPlaneInstanceIAMRole
-        - !Ref WorkerInstanceIAMRole
-      PolicyDocument:
+      RoleName: AwsLoadBalancerControllerIAMRole
+      AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
-          - Sid: VisualEditor0
-            Effect: Allow
-            Action:
-              - ecr:GetAuthorizationToken
-              - ecr:BatchCheckLayerAvailability
-              - ecr:GetDownloadUrlForLayer
-              - ecr:GetRepositoryPolicy
-              - ecr:DescribeRepositories
-              - ecr:ListImages
-              - ecr:BatchGetImage
-            Resource: "*"
+          - Effect: Allow
+            Principal:
+              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/${OIDCProvider}"
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                "${OIDCProvider}:aud": "sts.amazonaws.com"
+                "${OIDCProvider:sub": !Sub "system:serviceaccount:${AwsLoadBalancerControllerSaNamespace}:${AwsLoadBalancerControllerSa}"
+      Path: /
+      Policies:
+        - !Ref AwsLoadBalancerControllerPolicy
 
   AwsLoadBalancerControllerPolicy:
     Type: AWS::IAM::Policy
     Properties:
       PolicyName: AwsLoadBalancerControllerPolicy
-      Roles:
-        - !Ref ControlPlaneInstanceIAMRole
-        - !Ref WorkerInstanceIAMRole
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -259,6 +290,14 @@ Resources:
               iam:AWSServiceName: elasticloadbalancing.amazonaws.com
         - Effect: Allow
           Action:
+          - ec2:DescribeRegions
+          - ecr:GetAuthorizationToken
+          - ecr:BatchCheckLayerAvailability
+          - ecr:GetDownloadUrlForLayer
+          - ecr:GetRepositoryPolicy
+          - ecr:DescribeRepositories
+          - ecr:ListImages
+          - ecr:BatchGetImage
           - ec2:DescribeAccountAttributes
           - ec2:DescribeAddresses
           - ec2:DescribeAvailabilityZones
@@ -417,35 +456,29 @@ Resources:
           - elasticloadbalancing:ModifyRule
           Resource: "*"
 
-  WorkerAwsCloudProviderPolicy:
-    Type: AWS::IAM::Policy
+  ClusterAutoScalerIAMRole:
+    Type: AWS::IAM::Role
     Properties:
-      PolicyName: WorkerAwsCloudProviderPolicy
-      Roles:
-        - !Ref WorkerInstanceIAMRole
-      PolicyDocument:
+      RoleName: AwsLoadBalancerControllerIAMRole
+      AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
           - Effect: Allow
-            Action:
-              - ec2:DescribeInstances
-              - ec2:DescribeRegions
-              - ecr:GetAuthorizationToken
-              - ecr:BatchCheckLayerAvailability
-              - ecr:GetDownloadUrlForLayer
-              - ecr:GetRepositoryPolicy
-              - ecr:DescribeRepositories
-              - ecr:ListImages
-              - ecr:BatchGetImage
-            Resource: "*"
+            Principal:
+              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/${OIDCProvider}"
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                "${OIDCProvider}:aud": "sts.amazonaws.com"
+                "${OIDCProvider:sub": !Sub "system:serviceaccount:${ClusterAutoScalerSaNamespace}:${ClusterAutoScalerSa}"
+      Path: /
+      Policies:
+        - !Ref ClusterAutoScalerPolicy
 
-  ClusterAutoScalingPolicy:
+  ClusterAutoScalerPolicy:
     Type: AWS::IAM::Policy
     Properties:
       PolicyName: ClusterAutoScalingPolicy
-      Roles:
-        - !Ref ControlPlaneInstanceIAMRole
-        - !Ref WorkerInstanceIAMRole
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -468,148 +501,4 @@ Resources:
               - eks:DescribeNodegroup
             Resource: "*"
 
-  KubernetesClusterPutSSMParameterStoreAccessPolicy:
-    Type: "AWS::IAM::Policy"
-    Properties:
-      PolicyName: "ParameterStoreWritePolicy"
-      Roles:
-        - !Ref ControlPlaneInstanceIAMRole
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: "Allow"
-            Action: "ssm:PutParameter"
-            Resource:
-              - Fn::Sub: "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/kubernetes/${K8sClusterName}/*"
-
-  KubernetesClusterKMSKeyEncryptAccessPolicy:
-    Type: "AWS::IAM::Policy"
-    Properties:
-      PolicyName: "KMSKeyEncryptAccessPolicy"
-      Roles:
-        - !Ref ControlPlaneInstanceIAMRole
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: "Allow"
-            Action: "kms:Encrypt"
-            Resource:
-              - "*"
-
-  KubernetesClusterGetSSMParameterAccessPolicy:
-    Type: "AWS::IAM::Policy"
-    Properties:
-      PolicyName: "SSMParameterAccessPolicy"
-      Roles:
-        - !Ref ControlPlaneInstanceIAMRole
-        - !Ref WorkerInstanceIAMRole
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: "Allow"
-            Action: "ssm:GetParameter"
-            Resource:
-              - Fn::Sub: "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/kubernetes/${K8sClusterName}/*"
-
-  KubernetesClusterGetKMSKeyAccessPolicy:
-    Type: "AWS::IAM::Policy"
-    Properties:
-      PolicyName: "KMSKeyAccessPolicy"
-      Roles:
-        - !Ref ControlPlaneInstanceIAMRole
-        - !Ref WorkerInstanceIAMRole
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: "Allow"
-            Action:
-              - "kms:DescribeKey"
-              - "kms:GetKeyPolicy"
-              - "kms:GetKeyRotationStatus"
-            Resource:
-              - "*"
-  
-  BastionHostInstanceIAMRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: BastionHostInstanceIAMRole
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - ec2.amazonaws.com
-            Action:
-              - sts:AssumeRole
-      Tags:
-        - Key: Name
-          Value: BastionHostInstanceIAMRole
-  
-  BastionHostInstanceProfile:
-    Type: AWS::IAM::InstanceProfile
-    Properties:
-      InstanceProfileName: BastionHostInstanceProfile
-      Roles:
-        - !Ref BastionHostInstanceIAMRole
-
-  ControlPlaneInstanceIAMRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: ControlPlaneInstanceIAMRole
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - ec2.amazonaws.com
-            Action:
-              - sts:AssumeRole
-      Tags:
-        - Key: Name
-          Value: ControlPlaneInstanceIAMRole
-  
-  ControlPlaneInstanceProfile:
-    Type: AWS::IAM::InstanceProfile
-    Properties:
-      InstanceProfileName: ControlPlaneInstanceProfile
-      Roles:
-        - !Ref ControlPlaneInstanceIAMRole
-
-  WorkerInstanceIAMRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: WorkerInstanceIAMRole
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - ec2.amazonaws.com
-            Action:
-              - sts:AssumeRole
-      Tags:
-        - Key: Name
-          Value: WorkerInstanceIAMRole
-  
-  WorkerInstanceProfile:
-    Type: AWS::IAM::InstanceProfile
-    Properties:
-      InstanceProfileName: WorkerInstanceProfile
-      Roles:
-        - !Ref WorkerInstanceIAMRole
-
 Outputs:
-  BastionHostInstanceProfileArn:
-    Description: ARN of the BastionHostInstanceProfile
-    Value: !GetAtt BastionHostInstanceProfile.Arn
-
-  ControlPlaneInstanceProfileArn:
-    Description: ARN of the ControlPlaneInstanceProfile
-    Value: !GetAtt ControlPlaneInstanceProfile.Arn
-
-  WorkerInstanceProfileArn:
-    Description: ARN of the WorkerInstanceProfile
-    Value: !GetAtt WorkerInstanceProfile.Arn

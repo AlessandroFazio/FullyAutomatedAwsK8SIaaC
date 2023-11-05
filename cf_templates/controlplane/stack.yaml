@@ -66,10 +66,6 @@ Parameters:
   KubernetesVersion:
     Type: String
     Description: Please enter the Kubernetes version
-  
-  ControlPlaneInstanceProfileArn:
-    Type: String
-    Description: Please enter the ARN of the IAM instance profile for the Control Plane
 
   ControlPlaneAutoScalingGroupName: 
     Type: String
@@ -96,6 +92,102 @@ Parameters:
     Description: Please enter the name for the S3BucketName
 
 Resources:
+
+  EcrAccessPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: EcrPrivateRepositoryPullOnlyPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: VisualEditor0
+            Effect: Allow
+            Action:
+              - ecr:GetAuthorizationToken
+              - ecr:BatchCheckLayerAvailability
+              - ecr:GetDownloadUrlForLayer
+              - ecr:GetRepositoryPolicy
+              - ecr:DescribeRepositories
+              - ecr:ListImages
+              - ecr:BatchGetImage
+            Resource: "*"
+
+  S3BucketAccessPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: S3WriteOnlyAccessPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - "s3:PutObject"
+              - "s3:GetObject"
+              - "s3:ListBucket"
+              - "s3:DescribeBucket"
+            Resource:
+              - Fn::Sub: arn:aws:s3:::${S3BucketName}/*
+    
+  KMSKeyAccessPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: "ControlPlaneKMSKeyAccessPolicy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action: 
+              - "kms:Encrypt"
+              - "kms:DescribeKey"
+              - "kms:GetKeyPolicy"
+              - "kms:GetKeyRotationStatus"
+            Resource:
+              - "*"
+
+  SSMParameterStoreAccessPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: ControlPlaneSSMParameterStoreAccessPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action: 
+              - "ssm:PutParameter"
+              - "ssm:GetParameter"
+            Resource:
+              - Fn::Sub: "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/kubernetes/${K8sClusterName}/*"
+    
+  ControlPlaneInstanceIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ControlPlaneInstanceIAMRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - !Ref EcrAccessPolicy
+        - !Ref S3BucketAccessPolicy
+        - !Ref KMSKeyAccessPolicy
+        - !Ref SSMParameterStoreAccessPolicy
+      Tags:
+        - Key: Name
+          Value: ControlPlaneInstanceIAMRole
+  
+  ControlPlaneInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: ControlPlaneInstanceProfile
+      Roles:
+        - !Ref ControlPlaneInstanceIAMRole
+
   ControlPlaneNlbSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -246,7 +338,7 @@ Resources:
         ImageId: ami-0261755bbcb8c4a84 # Ubuntu AWS 20.04 ami
         InstanceType: !Ref ControlPlaneInstanceType
         IamInstanceProfile:
-          Arn: !Ref ControlPlaneInstanceProfileArn
+          Arn: !GetAtt ControlPlaneInstanceProfile.Arn
           Name: ControlPlaneInstanceProfile
         KeyName: !GetAtt ControlPlaneKeyPair.KeyName
         SecurityGroupIds:
