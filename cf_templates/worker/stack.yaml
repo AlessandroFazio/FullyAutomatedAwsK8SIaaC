@@ -114,21 +114,20 @@ Resources:
               - "s3:DescribeBucket"
             Resource:
               - Fn::Sub: arn:aws:s3:::${S3BucketName}/*
-
-  KMSAccessPolicy:
-    Type: "AWS::IAM::Policy"
-    Properties:
-      PolicyName: WorkerKMSAccessPolicy
+  
+  EC2AccessPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: EC2AccessPolicy
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
-          - Effect: "Allow"
+          - Effect: Allow
             Action:
-              - "kms:DescribeKey"
-              - "kms:GetKeyPolicy"
-              - "kms:GetKeyRotationStatus"
-            Resource:
-              - "*"
+              - ec2:DescribeInstances
+              - ec2:DescribeTags
+              - elasticloadbalancing:Describe*
+            Resource: "*"
   
   WorkerInstanceIAMRole:
     Type: AWS::IAM::Role
@@ -147,7 +146,7 @@ Resources:
       Policies:
         - !Ref EcrPrivateRepositoryPullOnlyPolicy
         - !Ref S3BucketAccessPolicy
-        - !Ref KMSAccessPolicy
+        - !Ref EC2AccessPolicy
       Tags:
         - Key: Name
           Value: WorkerInstanceIAMRole

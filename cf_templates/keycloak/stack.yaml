@@ -102,6 +102,14 @@ Parameters:
     Type: String
     Description: Keycloak Aurora DB database name
 
+  KeycloakAdminPasswordSecretId:
+    Type: String
+    Description: Keycloak admin password secret ID
+  
+  KubernetesKeySecretId:
+    Type: String
+    Description: Kubernetes key secret ID
+
 Resources:
 
   KeycloakUserAuroraAccessPolicy:
@@ -150,14 +158,17 @@ Resources:
           - Effect: "Allow"
             Action:
               - "secretsmanager:CreateSecret"
+              - "secretsmanager:GetSecretValue"
+              - "secretsmanager:ListSecretVersionIds"
+              - "secretsmanager:DescribeSecret"
             Resource:
               - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/keycloak/*"
   
-  EC2DescribeInstancesPolicy:
+  EC2AccessPolicy:
     Type: "AWS::IAM::ManagedPolicy"
     Properties:
-      Description: "Allows describing EC2 instances"
-      ManagedPolicyName: "EC2DescribeInstancesPolicy"
+      Description: "Allows actions on EC2 services"
+      ManagedPolicyName: "EC2AccessPolicy"
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -165,15 +176,6 @@ Resources:
             Action:
               - "ec2:DescribeInstances"
             Resource: "*"
-    
-  ASGScalingPolicy:
-    Type: "AWS::IAM::ManagedPolicy"
-    Properties:
-      Description: "Allows scaling an Auto Scaling Group"
-      ManagedPolicyName: "ASGScalingPolicy"
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
           - Effect: "Allow"
             Action:
               - "autoscaling:SetDesiredCapacity"
@@ -195,8 +197,7 @@ Resources:
       Policies:
         - !Ref CreateSecretsManagerPolicy
         - !Ref AWSS3ReadWritePrefixedS3BucketPolicy
-        - !Ref EC2DescribeInstancesPolicy
-        - !Ref ASGScalingPolicy
+        - !Ref EC2AccessPolicy
         - !Ref KeycloakUserAuroraAccessPolicy
 
   KeycloakTopLevelDomainPublicHostedZone:
@@ -438,7 +439,9 @@ Resources:
                                         ${AWS::Region} \
                                         ${CacheS3BucketName} \
                                         ${KeycloakAsgName} \
-                                        ${KeycloakAsgDesiredCapacity}"
+                                        ${KeycloakAsgDesiredCapacity}" \
+                                        ${KeycloakAdminPasswordSecretId} \
+                                        ${KubernetesKeySecretId}
             else
               echo "Starting additional node."
               aws s3 cp s3://${MainS3BucketName}/scripts/keycloak/joining-node.sh /tmp/joining-node.sh
@@ -452,7 +455,8 @@ Resources:
                                         ${AuroraDBPort} \
                                         ${KeycloakAuroraDBUser} \
                                         ${AWS::Region} \
-                                        ${CacheS3BucketName}"
+                                        ${CacheS3BucketName}" \
+                                        ${KeycloakAdminPasswordSecretId}
 
   # 7. Define the Auto Scaling Group
   KeycloakAutoScalingGroup:

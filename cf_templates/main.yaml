@@ -110,6 +110,13 @@ Parameters:
     Default: IRSA
     MinLength: 1
     MaxLength: 20
+  
+  NTHStackName:
+    Description: Please enter the name for the NTHStackName
+    Type: String
+    Default: NTH
+    MinLength: 1
+    MaxLength: 20
 
   ControlPlaneStackName:
     Description: Please enter the name for the ControlPlaneStackName
@@ -268,6 +275,12 @@ Parameters:
     MinLength: 1
     MaxLength: 20
   
+  KeycloakAdminPasswordSecretId:
+    Description: Please enter the secret id for the KeycloakAdminPasswordSecretId
+    Type: String
+    MinLength: 1
+    MaxLength: 40
+  
   KeycloakTopLevelDomain:
     Description:  Please enter the top level domain for the KeycloakTopLevelDomain
     Type: String
@@ -334,7 +347,84 @@ Parameters:
     Default: 16
     MinValue: 16
     MaxValue: 100
+  
+  OidcKubernetesKeySecretId:
+    Description: Please enter the secret id for the OidcKubernetesKeySecretId
+    Type: String
+    Default: keycloak/kubernetes/private-key
+    MinLength: 1
+    MaxLength: 40
+  
+  OidcKubernetesClientId:
+    Description: Please enter the client id for the OidcKubernetesClientId
+    Type: String
+    Default: kubernetes-client
+    MinLength: 1
+    MaxLength: 20
 
+  OidcKubernetesUsernameClaim:
+    Description: Please enter the username claim for the OidcKubernetesUsernameClaim
+    Type: String
+    Default: name
+    MinLength: 1
+    MaxLength: 20
+
+  OidcKubernetesGroupsClaim:
+    Description: Please enter the groups claim for the OidcKubernetesGroupsClaim
+    Type: String
+    Default: groups
+    MinLength: 1
+    MaxLength: 20  
+  
+  IRSAEbsCsiDriverSa:
+    Description: Please enter the name for the EbsCsiDriverSa
+    Type: String
+    Default: ebs-csi-controller-sa
+    MinLength: 1
+    MaxLength: 20
+
+  IRSAEbsCsiDriverSaNamespace:
+    Description: Please enter the namespace for the EbsCsiDriverSaNamespace
+    Type: String
+    Default: kube-system
+    MinLength: 1
+    MaxLength: 20
+  
+  IRSAAwsCloudProviderSaNamespace:
+    Description: Please enter the namespace for the AwsCloudProviderSaNamespace
+    Type: String
+    Default: kube-system
+    MinLength: 1
+    MaxLength: 20
+  
+  IRSAAwsLoadBalancerControllerSaNamespace:
+    Description: Please enter the namespace for the AwsLoadBalancerControllerSaNamespace
+    Type: String
+    Default: kube-system
+    MinLength: 1
+    MaxLength: 20
+
+  IRSAClusterAutoScalerSaNamespace:
+    Description: Please enter the namespace for the ClusterAutoScalerSaNamespace
+    Type: String
+    Default: kube-system
+    MinLength: 1
+    MaxLength: 20
+  
+  IRSANodeTerminationHandlerSaNamespace:
+    Description: Please enter the namespace for the NodeTerminationHandlerSaNamespace
+    Type: String
+    Default: kube-system
+    MinLength: 1
+    MaxLength: 20
+  
+  IRSANodeTerminationHandlerNamespace:
+    Description: Please enter the namespace for the NodeTerminationHandlerNamespace
+    Type: String
+    Default: kube-system
+    MinLength: 1
+    MaxLength: 20
+  
   WorkerInstanceType:
     Description: Please enter the instance type for the WorkerAsgName
     Type: String
@@ -454,6 +544,7 @@ Resources:
         KeycloakAsgMaxSize: !Ref KeycloakAsgMaxSize
         KeycloakAsgDesiredCapacity: !Ref KeycloakAsgDesiredCapacity
         KeycloakVersion: !Ref KeycloakVersion
+        KeycloakAdminPasswordSecretId: !Ref KeycloakAdminPasswordSecretId
         KeycloakTopLevelDomain: !Ref KeycloakTopLevelDomain
         KeycloakAlbSubDomainName: !Ref KeycloakAlbSubDomainName
         AuroraDBHost: !GetAtt AuroraStack.Outputs.ClusterEndpoint
@@ -461,6 +552,7 @@ Resources:
         KeycloakAuroraDBUser: !Ref KeycloakAuroraDBUser
         KeycloakAuroraDBSchema: !Ref KeycloakAuroraDBSchema
         KeycloakAuroraDBDatabaseName: !Ref KeycloakAuroraDBDatabaseName
+        KubernetesKeySecretId: !Ref OidcKubernetesKeySecretId
   
   IRSAStack:
     Type: AWS::CloudFormation::Stack
@@ -472,14 +564,22 @@ Resources:
         EnvironmentName: !Ref EnvironmentName
         StackName: !Ref IRSAStackName
         OidcProviderUrl: !Ref KeycloakAlbSubDomainName
-        EbsCsiDriverSa: !Ref IRSAEbsCsiDriverSa
         EbsCsiDriverSaNamespace: !Ref IRSAEbsCsiDriverSaNamespace
-        AwsCloudProviderSa: !Ref IRSAAwsCloudProviderSa
         AwsCloudProviderSaNamespace: !Ref IRSAAwsCloudProviderSaNamespace
-        AwsLoadBalancerControllerSa: !Ref IRSAAwsLoadBalancerControllerSa
         AwsLoadBalancerControllerSaNamespace: !Ref IRSAAwsLoadBalancerControllerSaNamespace
-        ClusterAutoScalerSa: !Ref IRSAClusterAutoScalerSa
         ClusterAutoScalerSaNamespace: !Ref IRSAClusterAutoScalerSaNamespace
+        NodeTerminationHandlerSaNamespace: !Ref IRSANodeTerminationHandlerSaNamespace
+  
+  NTHStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - VpcStack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cf_templates/node-termination-handler/stack.yaml
+      Parameters:
+        ProjectName: !Ref ProjectName
+        EnvironmentName: !Ref EnvironmentName
+        StackName: !Ref NTHStackName
   
   ControlPlaneStack:
     Type: AWS::CloudFormation::Stack
@@ -510,6 +610,22 @@ Resources:
         ControlPlaneInstanceType: !Ref ControlPlaneInstanceType
         ControlPlaneRootVolumeSize: !Ref ControlPlaneRootVolumeSize
         S3BucketName: !Ref S3BucketName
+        OidcProxyDns: !Ref KeycloakAlbSubDomainName
+        OidcKeySecretId: !Ref OidcKubernetesKeySecretId
+        OidcClientId: !Ref OidcKubernetesClientId
+        OidcUsernameClaim: !Ref OidcKubernetesUsernameClaim
+        OidcGroupsClaim: !Ref OidcKubernetesGroupsClaim
+        EbsCsiDriverSaNamespace: !Ref IRSAEbsCsiDriverSaNamespace
+        AwsCloudProviderSaNamespace: !Ref IRSAAwsCloudProviderSaNamespace
+        AwsLoadBalancerControllerSaNamespace: !Ref IRSAAwsLoadBalancerControllerSaNamespace
+        ClusterAutoScalerSaNamespace: !Ref IRSAClusterAutoScalerSaNamespace
+        EbsCsiDriverRoleArn: !GetAtt IRSAStack.Outputs.EbsCsiDriverRoleArn
+        AwsCloudProviderRoleArn: !GetAtt IRSAStack.Outputs.AwsCloudProviderRoleArn
+        AwsLoadBalancerControllerRoleArn: !GetAtt IRSAStack.Outputs.AwsLoadBalancerControllerRoleArn
+        ClusterAutoScalerRoleArn: !GetAtt IRSAStack.Outputs.ClusterAutoScalerRoleArn
+        NthNamespace: !Ref IRSANodeTerminationHandlerNamespace
+        NthSqsURL: !GetAtt NTHStack.Outputs.QueueURL
+        NthRoleArn: !GetAtt IRSAStack.Outputs.NodeTerminationHandlerRoleArn
   
   WorkerStack:
       Type: AWS::CloudFormation::Stack

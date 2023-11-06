@@ -1,0 +1,112 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: |
+  This template creates an SQS queue and an event rule for each of the
+  supported event types. The queue is used by the node termination handler
+  to receive events from AWS services.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: Name of the project
+
+  EnvironmentName:
+    Type: String
+    Description: An environment name that will be prefixed to resource names
+
+  StackName:
+    Type: String
+    Description: Name of the stack
+  
+  
+
+Resources:
+  Queue:
+    Type: 'AWS::SQS::Queue'
+    Properties:
+      MessageRetentionPeriod: 600
+      SqsManagedSseEnabled: true
+
+  QueuePolicy:
+    Type: 'AWS::SQS::QueuePolicy'
+    Properties:
+      Queues:
+        - !Ref Queue
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - events.amazonaws.com
+                - sqs.amazonaws.com
+            Action: 'sqs:SendMessage'
+            Resource: !GetAtt Queue.Arn
+
+  ASGTermRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      EventPattern:
+        source:
+          - aws.autoscaling
+        detail-type:
+          - EC2 Instance-terminate Lifecycle Action
+      Targets:
+        - Id: 1
+          Arn: !GetAtt Queue.Arn
+
+  ScheduledChangeRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      EventPattern:
+        source:
+          - aws.health
+        detail-type:
+          - AWS Health Event
+        detail:
+          service:
+            - EC2
+          eventTypeCategory:
+            - scheduledChange
+      Targets:
+        - Id: 1
+          Arn: !GetAtt Queue.Arn
+
+  SpotTermRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      EventPattern:
+        source:
+          - aws.ec2
+        detail-type:
+          - EC2 Spot Instance Interruption Warning
+      Targets:
+        - Id: 1
+          Arn: !GetAtt Queue.Arn
+
+  RebalanceRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      EventPattern:
+        source:
+          - aws.ec2
+        detail-type:
+          - EC2 Instance Rebalance Recommendation
+      Targets:
+        - Id: 1
+          Arn: !GetAtt Queue.Arn
+
+  InstanceStateChangeRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      EventPattern:
+        source:
+          - aws.ec2
+        detail-type:
+          - EC2 Instance State-change Notification
+      Targets:
+        - Id: 1
+          Arn: !GetAtt Queue.Arn
+
+Outputs:
+  QueueURL:
+    Description: Queue url for AWS NTH controller
+    Value: !Ref Queue

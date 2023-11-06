@@ -1,3 +1,4 @@
+KEYCLOAK_ADMIN_PWD_SECRET_ID = "keycloak/admin/password"
 DEFAULT_CONFIG="config/default.yaml"
 SCRIPTS_DIR="scripts"
 TEMPLATES_DIR="cf_templates"

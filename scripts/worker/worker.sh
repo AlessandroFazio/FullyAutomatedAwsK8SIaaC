@@ -115,7 +115,8 @@ EOF"
 
 function get_controlplane_endpoint() {
   local response=$(aws elbv2 describe-load-balancers \
-                    --query 'LoadBalancers[?Tags[?Key==`Name` && Value==`controlplane-nlb`]].DNSName'  \
+                    --names ${K8S_CLUSTER_NAME}-controlplane-nlb \
+                    --query 'LoadBalancers[?State.Code==\`active\`].DNSName' \
                     --output text)
   if [ -z "$response" ]; then
     echo "controlplane-nlb not found"
@@ -123,14 +124,13 @@ function get_controlplane_endpoint() {
   fi
   echo $response
 }
-
 function get_worker_join_cmd() {
-  local response=$(aws ssm get-parameter \
-                    --name "/kubernetes/${K8S_CLUSTER_NAME}/cmd/join/worker" \
-                    --query 'Parameter.Value' \
+  local response=$(aws secretsmanager get-secret-value \
+                    --secret-id "kubernetes/${K8S_CLUSTER_NAME}/cmd/join/worker" \
+                    --query SecretString \
                     --output text)
   if [ -z "$response" ]; then
-    echo "worker join command not found"
+    echo "controlplane join command not found"
     exit 1
   fi
   echo $response
@@ -151,7 +151,7 @@ discovery:
     caCertHashes:
       - "${CERT_HASH}"
 nodeRegistration:
-  name: "$(hostname -f)"
+  name: "${HOSTNAME}"
   kubeletExtraArgs:
     cloud-provider: external 
     container-runtime-endpoint: unix:///run/containerd/containerd.sock

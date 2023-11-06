@@ -1,5 +1,8 @@
 #!/bin/bash 
 
+# Set -e to exit on error and -x to print each command
+set -ex
+
 KEYCLOAK_VERSION=${1}
 FRONTEND_PROXY_DNS=${2}
 DB_SCHEMA=${3}
@@ -11,6 +14,8 @@ AWS_REGION=${8}
 S3_BUCKET_NAME=${9}
 KEYCLOAK_ASG_NAME=${10}
 KEYCLOAK_ASG_DESIRED_CAPACITY=${11}
+KEYCLOAK_ADMIN_PASSWORD_SECRET_ID=${12}
+K8S_KEY_SECRET_ID=${13}
 
 if [ -z "$KEYCLOAK_VERSION" ]; then
     echo "KEYCLOAK_VERSION is empty"
@@ -64,6 +69,16 @@ fi
 
 if [ -z "$KEYCLOAK_ASG_DESIRED_CAPACITY" ]; then
     echo "KEYCLOAK_ASG_DESIRED_CAPACITY is empty"
+    exit 1
+fi
+
+if [ -z "$KEYCLOAK_ADMIN_PASSWORD_SECRET_ID" ]; then
+    echo "KEYCLOAK_ADMIN_PASSWORD_SECRET_ID is empty"
+    exit 1
+fi
+
+if [ -z "$K8S_KEY_SECRET_ID" ]; then
+    echo "K8S_KEY_SECRET_ID is empty"
     exit 1
 fi
 
@@ -127,7 +142,7 @@ for PACKAGE in "${AWS_SDK_PACKAGES[@]}"; do
 
     URL="https://repo1.maven.org/maven2/software/amazon/awssdk/${PACKAGE}/${AWS_SDK_VERSION}/${PACKAGE}-${AWS_SDK_VERSION}.jar"
 
-    JAR_FILE="/${DOWNLOAD_PATH}/${PACKAGE}-${AWS_SDK_VERSION}.jar"
+    JAR_FILE="${DOWNLOAD_PATH}/${PACKAGE}-${AWS_SDK_VERSION}.jar"
 
     wget $URL -O $JAR_FILE
 done
@@ -147,44 +162,46 @@ sudo keytool -importcert -file "${DOWNLOAD_PATH}/${AWS_REGION}-bundle.pem" \
 wget https://github.com/keycloak/keycloak/releases/download/${KEYCLOAK_VERSION}/keycloak-${KEYCLOAK_VERSION}.zip \
     -O keycloak-${KEYCLOAK_VERSION}.zip
 
-unzip keycloak-${KEYCLOAK_VERSION}.zip
-
 sudo groupadd keycloak
 sudo useradd -r -g keycloak -d /opt/keycloak -s /sbin/nologin keycloak
 
-sudo mkdir -p /opt/keycloak/log/
-sudo touch /opt/keycloak/log/keycloak.log
-sudo chown -R keycloak:keycloak /opt/keycloak/log/
-
-sudo mkdir -p /opt/keycloak/export/
-sudo chown -R keycloak:keycloak /opt/keycloak/export/
+unzip keycloak-${KEYCLOAK_VERSION}.zip -d /opt/
 
 sudo mkdir -p /opt/keycloak-${KEYCLOAK_VERSION}/data/import/
-sudo chown -R keycloak:keycloak /opt/keycloak-${KEYCLOAK_VERSION}/data
-
-sudo mkdir -p /opt/keycloak/certs/
-sudo mv ${DOWNLOAD_PATH}/${AWS_REGION}-bundle.pem /opt/keycloak/certs/
-sudo chown -R keycloak:keycloak /opt/keycloak/certs/
-sudo chmod 644 /opt/keycloak/certs/${AWS_REGION}-bundle.pem
-
-sudo mkdir -p /opt/keycloak/keystores/
-sudo mv rds-${AWS_REGION}-truststore.jks /opt/keycloak/keystores/
-sudo chown -R keycloak:keycloak /opt/keycloak/keystores/
-sudo chmod 600 /opt/keycloak/keystores/rds-${AWS_REGION}-truststore.jks
-
-sudo mv keycloak-${KEYCLOAK_VERSION} /opt/keycloak-${KEYCLOAK_VERSION}
-
-sudo chown -R keycloak:keycloak /opt/keycloak-${KEYCLOAK_VERSION}
-sudo chmod -R o+rwx /opt/keycloak-${KEYCLOAK_VERSION}/
-
-sudo mkdir -p /etc/keycloak-${KEYCLOAK_VERSION}
-sudo chown -R keycloak:keycloak /etc/keycloak-${KEYCLOAK_VERSION}
 
 for JAR_FILE in $(ls ${DOWNLOAD_PATH}/*.jar); do
     sudo cp $JAR_FILE /opt/keycloak-${KEYCLOAK_VERSION}/providers/
 done
 
-sudo chown -R keycloak:keycloak /opt/keycloak-${KEYCLOAK_VERSION}/providers/
+sudo chown -R keycloak:keycloak /opt/keycloak-${KEYCLOAK_VERSION}
+sudo chmod -R o+rwx /opt/keycloak-${KEYCLOAK_VERSION}
+
+sudo mkdir -p /opt/keycloak/log/
+sudo touch /opt/keycloak/log/keycloak.log
+
+sudo mkdir -p /opt/keycloak/export/
+
+sudo mkdir -p /opt/keycloak/certs/
+sudo mv ${DOWNLOAD_PATH}/${AWS_REGION}-bundle.pem /opt/keycloak/certs/
+sudo chmod 644 /opt/keycloak/certs/${AWS_REGION}-bundle.pem
+
+sudo mkdir -p /opt/keycloak/keystores/
+sudo mv rds-${AWS_REGION}-truststore.jks /opt/keycloak/keystores/
+sudo chmod 600 /opt/keycloak/keystores/rds-${AWS_REGION}-truststore.jks
+sudo chown -R keycloak:keycloak /opt/keycloak/
+
+sudo mkdir -p /etc/keycloak-${KEYCLOAK_VERSION}
+sudo chown -R keycloak:keycloak /etc/keycloak-${KEYCLOAK_VERSION}
+
+KEYCLOAK_ADMIN_PASSWORD=$(aws secretsmanager get-secret-value \
+    --secret-id ${KEYCLOAK_ADMIN_PASSWORD_SECRET_ID} \
+    --query SecretString \
+    --output text)
+
+if [ -z "$KEYCLOAK_ADMIN_PASSWORD" ]; then
+    echo "KEYCLOAK_ADMIN_PASSWORD is empty. Exiting..."
+    exit 1
+fi
 
 DB_URL_PROPERTIES="wrapperPlugins=iam&ssl=true&sslmode=verify-ca&sslrootcert=/opt/keycloak/certs/${AWS_REGION}-bundle.pem"
 
@@ -204,17 +221,17 @@ KC_DIR="/opt/keycloak/export"
 KC_HOSTNAME_STRICT=true
 KC_HOSTNAME_URL=https://${FRONTEND_PROXY_DNS}
 KEYCLOAK_ADMIN=admin
-KEYCLOAK_ADMIN_PASSWORD=9a52cc2eaa0e9280029637e373e3075d
+KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD}
 KC_HOSTNAME_ADMIN_URL=https://${FRONTEND_PROXY_DNS}
-DB_NAME=${DB_NAME} # keycloak
-DB_HOST=${DB_HOST} # ip-172-31-86-95 -> modify this when running the script
-DB_PORT=${DB_PORT} # 5432
+DB_NAME=${DB_NAME} 
+DB_HOST=${DB_HOST}
+DB_PORT=${DB_PORT}
 DB_URL_PROPERTIES=${DB_URL_PROPERTIES}
 KC_DB_URL=jdbc:aws-wrapper:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME}?${DB_URL_PROPERTIES}
 KC_DB=postgres
 KC_DB_DRIVER=software.amazon.jdbc.Driver
 KC_DB_SCHEMA=${DB_SCHEMA}
-#KC_DB_USERNAME=${DB_USER} # keycloak
+#KC_DB_USERNAME=${DB_USER}
 KC_TRANSACTION_XA_ENABLED=false
 JAVA_OPTS_APPEND=-Djgroups.s3.region_name=${AWS_REGION} -Djgroups.s3.bucket_name=${S3_BUCKET_NAME} -Djgroups.s3.bucket_prefix=keycloak/cache
 KC_LOG=console,file
@@ -254,34 +271,46 @@ sudo systemctl start keycloak
 
 ### Password for keycloak admin user: 9a52cc2eaa0e9280029637e373e3075d ###
 
+timeout 300 bash -c "\
+    until curl --output /dev/null --silent --head --fail https://${FRONTEND_PROXY_DNS}/auth/realms/master; do
+        printf '.'
+        sleep 5
+    done
+"
+
 K8S_KEY_FILENAME="k8s-private-key.pem"
 openssl genpkey -algorithm RSA -out ${K8S_KEY_FILENAME}
-stripped_priv_key=$(awk '/BEGIN PRIVATE KEY/{flag=1;next}/END PRIVATE KEY/{flag=0}flag' ${K8S_KEY_FILENAME})
+k8s_key=$(awk '/-----BEGIN PRIVATE KEY-----/{p=1; next} /-----END PRIVATE KEY-----/{p=0} p' ${K8S_KEY_FILENAME} | tr -d '\n')
+sudo chmod 600 ${K8S_KEY_FILENAME}
+sudo chown keycloak:keycloak ${K8S_KEY_FILENAME}
 
-#kcadm.sh create components \
-#    -r kubernetes  \
-#    -s name=rsa \
-#    -s providerId=rsa \
-#    -s providerType=org.keycloak.keys.KeyProvider \
-#    -s config.privateKey=["${stripped_priv_key}"] \
-#    --server https://${FRONTEND_PROXY_DNS}:443 \
-#    --user admin \
-#    --password "9a52cc2eaa0e9280029637e373e3075d"
+sudo -u keycloak /opt/keycloak-${KEYCLOAK_VERSION}/bin/kcadm.sh create components \
+    -r kubernetes \
+    -s name=rsa \
+    -s providerId=rsa \
+    -s providerType=org.keycloak.keys.KeyProvider \
+    -s config.privateKey=[\"${k8s_key}\"] \
+    -s config.priority=["150"] \
+    --server "${FRONTEND_PROXY_DNS}:443" \
+    --user admin \
+    --password "${KEYCLOAK_ADMIN_PASSWORD}"
 
-# aws secretsmanager create-secret --name ${K8S_KEY_FILENAME} --secret-string file://${K8S_KEY_FILENAME}
+sudo -u keycloak aws secretsmanager create-secret \
+    --name "${K8S_KEY_SECRET_ID}" \
+    --secret-string file://${K8S_KEY_FILENAME}
 
-# if [ $? -eq 0 ]; then
-#  echo "Private key uploaded successfully."
-# else
-#  echo "Command encountered an error. Exiting..."
-#  exit 1
-#fi
+if [ $? -eq 0 ]; then
+  echo "Private key uploaded successfully."
+else
+  echo "Command encountered an error. Exiting..."
+  exit 1
+fi
 
-# rm -f ${K8S_KEY_FILENAME}
-# unset stripped_priv_key
+sudo rm -f ${K8S_KEY_FILENAME}
+unset private_key
 
-# aws autoscaling update-auto-scaling-group \
-#    --auto-scaling-group-name ${KEYCLOAK_ASG_NAME} \
-#    --desired-capacity ${KEYCLOAK_ASG_DESIRED_CAPACITY}
+aws autoscaling update-auto-scaling-group \
+    --auto-scaling-group-name ${KEYCLOAK_ASG_NAME} \
+    --desired-capacity ${KEYCLOAK_ASG_DESIRED_CAPACITY}
 
 # TODO: Create Lambda function for Revoking permissions to ASG after having the first node up and running

@@ -10,9 +10,11 @@ from utils.aws_utils import (
     upload_file_to_s3,
     upload_dir_to_s3,
     create_stack,
+    upload_to_secret_manager,
 )
 from utils.docker_utils import get_docker_image
 from utils.ssh_utils import generate_key
+import uuid
 import boto3
 from docker import DockerClient
 import os
@@ -49,6 +51,9 @@ def main(config: Dict[Any, Any]) -> None:
     ecr_client = boto3.client('ecr', region_name='us-east-1')
     repository_name = f"{project_name}/{environment_name}/lambda/dbbootstrap"
     push_to_ecr(docker_client, ecr_client, f"{LAMBDA_DIR}/dbbootstrap", repository_name)
+
+    secrets_manager_client = boto3.client("secretsmanager", region)
+    upload_to_secret_manager(secrets_manager_client, KEYCLOAK_ADMIN_PWD_SECRET_ID, str(uuid.uuid4()))
 
     cf_client = boto3.client("cloudformation", region)
     auto_configure_cloudformation(config, bucket_name)

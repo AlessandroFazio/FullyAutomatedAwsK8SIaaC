@@ -1,9 +1,23 @@
-K8S_CLUSTER_NAME=$1
+#!/bin/bash
 
-if [ -z "${K8S_CLUSTER_NAME}" ]; then
-  echo "K8S_CLUSTER_NAME is required"
-  exit 1
-fi
+set -ex
+
+K8S_CLUSTER_NAME=${1}
+CLUSTER_AUTO_SCALER_SA_NAMESPACE=${2}
+CLUSTER_AUTO_SCALER_ANNOTATION=${3}
+
+required_args=(
+    K8S_CLUSTER_NAME
+    CLUSTER_AUTO_SCALER_SA_NAMESPACE
+    CLUSTER_AUTO_SCALER_ROLE_ARN
+)
+
+for arg in "${required_args[@]}"; do
+  if [ -z "${!arg}" ]; then
+    echo "${arg} is required"
+    exit 1
+  fi
+done
 
 cat <<EOF | tee ~/cluster-autoscaler/multi-asg/cluster-autoscaler.yaml
 ---
@@ -13,8 +27,10 @@ metadata:
   labels:
     k8s-addon: cluster-autoscaler.addons.k8s.io
     k8s-app: cluster-autoscaler
+  annotations:
+    ${CLUSTER_AUTO_SCALER_ANNOTATION}
   name: cluster-autoscaler
-  namespace: kube-system
+  namespace: ${CLUSTER_AUTO_SCALER_SA_NAMESPACE}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -76,7 +92,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: cluster-autoscaler
-  namespace: kube-system
+  namespace: ${CLUSTER_AUTO_SCALER_SA_NAMESPACE}
   labels:
     k8s-addon: cluster-autoscaler.addons.k8s.io
     k8s-app: cluster-autoscaler
@@ -104,7 +120,7 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: cluster-autoscaler
-    namespace: kube-system
+    namespace: ${CLUSTER_AUTO_SCALER_SA_NAMESPACE}
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -122,7 +138,7 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: cluster-autoscaler
-    namespace: kube-system
+    namespace: ${CLUSTER_AUTO_SCALER_SA_NAMESPACE}
 
 ---
 apiVersion: apps/v1
@@ -152,7 +168,7 @@ spec:
         fsGroup: 65534
         seccompProfile:
           type: RuntimeDefault
-      serviceAccountName: cluster-autoscaler
+      serviceAccountName: ${CLUSTER_AUTO_SCALER_SA}
       tolerations:
         - effect: NoSchedule
           operator: Exists

@@ -1,3 +1,4 @@
+from ctypes import Union
 from http import client
 import re
 from typing import Dict
@@ -196,4 +197,30 @@ def read_aws_credentials(filename: str='.aws_credentials.json') -> Dict[str, str
             raise RuntimeError(msg)
 
     return credentials
+
+def upload_to_secret_manager(client, secret_name: str, secret_value: str) -> None:
+    """Upload secret to AWS Secret Manager.
+    
+    :param client: AWS Secret Manager client.
+    :param secret_name: Secret name.
+    :param secret_value: Secret value.
+    :return: None
+    :rtype: None
+    """
+
+    try:
+        response = client.create_secret(Name=secret_name, SecretString=secret_value)
+        LOGGER.info(f"Uploaded secret to AWS Secret Manager with name: {secret_name}")
+        return response
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'ResourceExistsException':
+            LOGGER.info(f"Secret with name {secret_name} already exists.")
+            return None
+        else:
+            LOGGER.error(f"An error occurred: {e}")
+            exit(1)
+    except Exception as e:
+        LOGGER.error(f"An error occurred: {e}")
+        exit(1)
+
 

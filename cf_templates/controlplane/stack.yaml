@@ -90,6 +90,70 @@ Parameters:
   S3BucketName: 
     Type: String
     Description: Please enter the name for the S3BucketName
+  
+  OidcProxyDns:
+    Type: String
+    Description: Please enter the OIDC Proxy DNS
+  
+  OidcClientId:
+    Type: String
+    Description: Please enter the OIDC Client ID
+  
+  OidcKeySecretId:
+    Type: String
+    Description: Please enter the OIDC Key Secret ID
+  
+  OidcUsernameClaim:
+    Type: String
+    Description: Please enter the OIDC Username Claim
+  
+  OidcGroupsClaim:
+    Type: String
+    Description: Please enter the OIDC Groups Claim
+
+  EbsCsiDriverSaNamespace:
+    Type: String
+    Description: Please enter the EFS CSI Driver Service Account Namespace
+
+  EbsCsiDriverRoleArn:
+    Type: String
+    Description: Please enter the EFS CSI Driver Role ARN
+  
+  AwsCloudProviderSaNamespace:
+    Type: String
+    Description: Please enter the AWS Cloud Provider Service Account Namespace
+
+  AwsCloudProviderRoleArn:
+    Type: String
+    Description: Please enter the AWS Cloud Provider Role ARN
+  
+  AwsLoadBalancerControllerSaNamespace:
+    Type: String
+    Description: Please enter the AWS Load Balancer Controller Service Account Namespace
+  
+  AwsLoadBalancerControllerRoleArn:
+    Type: String
+    Description: Please enter the AWS Load Balancer Controller Role ARN
+  
+  ClusterAutoScalerSaNamespace:
+    Type: String
+    Description: Please enter the Cluster Auto Scaler Service Account Namespace
+  
+  ClusterAutoScalerRoleArn:
+    Type: String
+    Description: Please enter the Cluster Auto Scaler Role ARN
+  
+  NthNamespace:
+    Type: String
+    Description: Please enter the Nth Namespace
+  
+  NthSqsURL:
+    Type: String
+    Description: Please enter the Nth SQS URL
+  
+  NthRoleArn:
+    Type: String
+    Description: Please enter the Nth Role ARN
 
 Resources:
 
@@ -127,37 +191,61 @@ Resources:
               - "s3:DescribeBucket"
             Resource:
               - Fn::Sub: arn:aws:s3:::${S3BucketName}/*
-    
-  KMSKeyAccessPolicy:
-    Type: "AWS::IAM::Policy"
-    Properties:
-      PolicyName: "ControlPlaneKMSKeyAccessPolicy"
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: "Allow"
-            Action: 
-              - "kms:Encrypt"
-              - "kms:DescribeKey"
-              - "kms:GetKeyPolicy"
-              - "kms:GetKeyRotationStatus"
-            Resource:
-              - "*"
-
-  SSMParameterStoreAccessPolicy:
+  
+  SecretManagerAccessPolicy:
     Type: AWS::IAM::Policy
     Properties:
-      PolicyName: ControlPlaneSSMParameterStoreAccessPolicy
+      PolicyName: ControlPlaneSecretManagerAccessPolicy
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
           - Effect: "Allow"
             Action: 
-              - "ssm:PutParameter"
-              - "ssm:GetParameter"
+              - "secretsmanager:GetSecretValue"
+              - "secretsmanager:DescribeSecret"
+              - "secretsmanager:ListSecretVersionIds"
+              - "secretsmanager:CreateSecret"
+              - "secretsmanager:UpdateSecret"
             Resource:
-              - Fn::Sub: "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/kubernetes/${K8sClusterName}/*"
-    
+              - Fn::Sub: "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:kubernetes/${K8sClusterName}/*"
+          - Effect: "Allow"
+            Action: 
+              - "secretsmanager:GetSecretValue"
+              - "secretsmanager:DescribeSecret"
+              - "secretsmanager:ListSecretVersionIds"
+            Resource:
+              - Fn::Sub: "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:keycloak/kubernetes/*"
+  
+  EC2AccessPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: EC2AccessPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - ec2:DescribeInstances
+              - ec2:DescribeTags
+              - autoscaling:Describe*
+              - autoscaling:SetDesiredCapacity
+              - elasticloadbalancing:Describe*
+            Resource: "*"
+  
+  ACMAccessPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: ACMAccessPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - acm:DescribeCertificate
+              - acm:ListCertificates
+              - acm:GetCertificate
+            Resource: "*"
+
   ControlPlaneInstanceIAMRole:
     Type: AWS::IAM::Role
     Properties:
@@ -175,8 +263,9 @@ Resources:
       Policies:
         - !Ref EcrAccessPolicy
         - !Ref S3BucketAccessPolicy
-        - !Ref KMSKeyAccessPolicy
-        - !Ref SSMParameterStoreAccessPolicy
+        - !Ref SecretManagerAccessPolicy
+        - !Ref EC2AccessPolicy
+        - !Ref ACMAccessPolicy
       Tags:
         - Key: Name
           Value: ControlPlaneInstanceIAMRole
@@ -208,7 +297,7 @@ Resources:
   ControlPlaneNlb:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Name: controlplane-nlb
+      Name: !Sub ${K8sClusterName}-controlplane-nlb
       Scheme: internal
       IpAddressType: ipv4
       Subnets:
@@ -395,7 +484,20 @@ Resources:
                 ${K8sNodesHostnameMode} \
                 ${ControlPlaneAutoScalingGroupName} \
                 ${ControlPlaneAutoScalingGroupDesiredCapacity} \
-                ${S3BucketName}
+                ${S3BucketName} \
+                ${OidcProxyDns} \
+                ${OidcKeySecretId} \
+                ${OidcClientId} \
+                ${OidcUsernameClaim} \
+                ${OidcGroupsClaim} \
+                ${EbsCsiDriverSaNamespace} \
+                ${AwsCloudProviderSaNamespace} \
+                ${AwsLoadBalancerControllerSaNamespace} \
+                ${ClusterAutoScalerSaNamespace} \
+                ${NthNamespace} \
+                ${NthSqsURL} \
+                ${NthRoleArn} 
+
             else
               aws s3 cp s3://${S3BucketName}/scripts/controlplane/joining-controlplane.sh /tmp/controlplane.sh
               chmod +x /tmp/controlplane.sh
@@ -443,6 +545,19 @@ Resources:
           PropagateAtLaunch: false
         - Key: k8s.io/cluster-autoscaler/node-template/taint/node-role.kubernetes.io/controlplane::NoSchedule
           PropagateAtLaunch: true
+        - Key: node-termination-handler/managed
+          Value: "true"
+          PropagateAtLaunch: true
+  
+  ControlPlaneAsgLifecycleHook:
+    Type: AWS::AutoScaling::LifecycleHook
+    Properties:
+      AutoScalingGroupName: !Ref ControlPlaneAutoScalingGroup
+      LifecycleTransition: autoscaling:EC2_INSTANCE_TERMINATING
+      DefaultResult: CONTINUE
+      HeartbeatTimeout: 300
+      LifecycleHookName: ControlPlaneNodeTerminationHook
+
 
 Outputs:
   ControlPlaneNlbSecurityGroup:
