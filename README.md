@@ -1,5 +1,5 @@
 # Aws - Kubernetes IaaC 
-This repo contains a fully automated IaaC deployment with CloudFormation for a Private-Public Cloud Aws Infrastructure on which a Self Managed Kuberentes Cluster is created. 
+This repo contains a fully automated IaaC deployment with CloudFormation for a Private-Public Cloud Aws Infrastructure on top of which a Self Managed Kuberentes Cluster is created. 
 The Self Managed Kuberentes Cluster is equipped with a lot of EKS features like ClusterAutoscaler, NodeTerminationHanlder, EBS CSI Driver, AWS CloudProviderController, AWS LoadBalancerController, etc...
 CNI of choice is Calico for its flexibility, deployed with Broader Gateway Protocol in IPIP encapsulation mode. 
 
