@@ -19,7 +19,10 @@ for arg in "${required_args[@]}"; do
   fi
 done
 
-cat <<EOF | tee ~/cluster-autoscaler/multi-asg/cluster-autoscaler.yaml
+BASE_DIR=/home/ubuntu/cluster-autoscaler/multi-asg
+mkdir -p ${BASE_DIR}
+
+cat <<EOF | tee ${BASE_DIR}/cluster-autoscaler.yaml
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -221,3 +224,5 @@ spec:
           hostPath:
             path: "/etc/ssl/certs/ca-certificates.crt"
 EOF
+
+kubectl apply -f ${BASE_DIR}/cluster-autoscaler.yaml

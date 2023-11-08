@@ -1,3 +1,9 @@
+#!/bin/bash
+
+BASE_DIR=/home/ubuntu/metrics-server
+mkdir -p ${BASE_DIR}
+
+cat <<EOF | tee ${BASE_DIR}/metrics-server.yaml
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -196,3 +202,6 @@ spec:
     namespace: kube-system
   version: v1beta1
   versionPriority: 100
+EOF
+
+kubectl apply -f ${BASE_DIR}/metrics-server.yaml
