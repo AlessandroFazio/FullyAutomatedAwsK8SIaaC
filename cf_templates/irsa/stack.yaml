@@ -43,7 +43,7 @@ Resources:
   OIDCProvider:
     Type: AWS::IAM::OIDCProvider
     Properties:
-      Url: !Ref OidcProviderUrl # TODO: handle OIDC Provider correctly
+      Url: !Ref OidcProviderUrl
       ClientIDList:
         - sts.amazonaws.com
 

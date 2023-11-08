@@ -563,7 +563,7 @@ Resources:
         ProjectName: !Ref ProjectName
         EnvironmentName: !Ref EnvironmentName
         StackName: !Ref IRSAStackName
-        OidcProviderUrl: !Ref KeycloakAlbSubDomainName
+        OidcProviderUrl: !Sub https://${KeycloakAlbSubDomainName}/realms/kubernetes
         EbsCsiDriverSaNamespace: !Ref IRSAEbsCsiDriverSaNamespace
         AwsCloudProviderSaNamespace: !Ref IRSAAwsCloudProviderSaNamespace
         AwsLoadBalancerControllerSaNamespace: !Ref IRSAAwsLoadBalancerControllerSaNamespace
@@ -610,7 +610,7 @@ Resources:
         ControlPlaneInstanceType: !Ref ControlPlaneInstanceType
         ControlPlaneRootVolumeSize: !Ref ControlPlaneRootVolumeSize
         S3BucketName: !Ref S3BucketName
-        OidcProxyDns: !Ref KeycloakAlbSubDomainName
+        OidcProviderUrl: !Sub https://${KeycloakAlbSubDomainName}/realms/kubernetes
         OidcKeySecretId: !Ref OidcKubernetesKeySecretId
         OidcClientId: !Ref OidcKubernetesClientId
         OidcUsernameClaim: !Ref OidcKubernetesUsernameClaim

@@ -91,7 +91,7 @@ Parameters:
     Type: String
     Description: Please enter the name for the S3BucketName
   
-  OidcProxyDns:
+  OidcProviderUrl:
     Type: String
     Description: Please enter the OIDC Proxy DNS
   
@@ -485,7 +485,7 @@ Resources:
                 ${ControlPlaneAutoScalingGroupName} \
                 ${ControlPlaneAutoScalingGroupDesiredCapacity} \
                 ${S3BucketName} \
-                ${OidcProxyDns} \
+                ${OidcProviderUrl} \
                 ${OidcKeySecretId} \
                 ${OidcClientId} \
                 ${OidcUsernameClaim} \

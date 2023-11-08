@@ -145,10 +145,16 @@ function get_nlb_dns() {
   echo "${response}"
 }
 
+function get_host_from_url() {
+  local url=$1
+  echo "${url}" | cut -d'/' -f3
+}
+
 function get_oidc_cacert() {
-  local oidc_proxy_dns=$1
+  local oidc_provider_url=$1
+  local domain_name=$(get_host_from_url "${oidc_provider_url}")
   local crt_arn=$(aws acm list-certificates \
-    --query "CertificateSummaryList[?DomainName=='${oidc_proxy_dns}'] | [0].CertificateArn" \
+    --query "CertificateSummaryList[?DomainName=='${domain_name}'] | [0].CertificateArn" \
     --output text)
   
   if [ -z "${crt_arn}" ]; then
@@ -185,19 +191,19 @@ function get_oidc_privkey() {
 }
 
 function get_oidc_pubkey() {
-  local oidc_proxy_dns=$1
-  local oidc_pubkey=$(curl -s https://"${oidc_proxy_dns}"/realm/kubernetes | jq '.public_key' | tr -d '"')
+  local oidc_provider_url=$1
+  local oidc_pubkey=$(curl -s https://"${oidc_provider_url}"/realm/kubernetes | jq '.public_key' | tr -d '"')
   local frmt_oidc_pubkey="-----BEGIN PUBLIC KEY-----\n$(echo -n "${oidc_pubkey}" | fold -w64)\n-----END PUBLIC KEY-----"
   echo -e "${frmt_oidc_pubkey}" > sa-signer-pkcs8.pub
 }
 
 function prepare_oidc_resources() {
-  local oidc_proxy_dns=$1
+  local oidc_provider_url=$1
   local oidc_privkey_secret_id=$2
 
-  get_oidc_cacert "${oidc_proxy_dns}"
+  get_oidc_cacert "${oidc_provider_url}"
   get_oidc_privkey "${oidc_privkey_secret_id}"
-  get_oidc_pubkey "${oidc_proxy_dns}"
+  get_oidc_pubkey "${oidc_provider_url}"
 
   sudo mkdir -p /etc/ssl/keycloak/certs
   sudo mv keycloak-ca-chain.crt /etc/ssl/keycloak/certs
@@ -217,7 +223,7 @@ function create_kubeadm_config() {
   local pod_network_cidr=$3
   local cluster_service_cidr=$4
   local cluster_default_dns=$5
-  local oidc_proxy_dns=$6
+  local oidc_provider_url=$6
   local oidc_client_id=$7
   local oidc_username_claim=$8
   local oidc_groups_claim=$9
@@ -241,13 +247,13 @@ clusterName: ${cluster_name}
 apiServer:
   extraArgs:
     cloud-provider: external
-    oidc-issuer-url: https://${oidc_proxy_dns}/realms/kubernetes
+    oidc-issuer-url: ${oidc_provider_url}
     oidc-client-id: ${oidc_client_id}
     oidc-ca-file: /etc/kubernetes/ssl/keycloak/keycloak-ca-chain.crt
     oidc-username-claim: ${oidc-username-claim}
     oidc-groups-claim: ${oidc-groups-claim}
     api-audiences: sts.amazonaws.com
-    service-account-issuer: https://${oidc_proxy_dns}/realms/kubernetes
+    service-account-issuer: ${oidc_provider_url}
     service-account-key-file: /etc/kubernetes/keys/keycloak/sa-signer-pkcs8.pub
     service-account-signing-key-file: /etc/kubernetes/keys/keycloak/sa-signer.key
   extraVolumes:
@@ -391,7 +397,7 @@ K8S_NODES_HOSTNAME_MODE=${6}
 CONTROLPLANE_ASG_NAME=${7}
 CONTROLPLANE_ASG_DESIRED_CAPACITY=${8}
 S3_BUCKET=${9}
-OIDC_PROXY_DNS=${10}
+OIDC_PROVIDER_URL=${10}
 OIDC_KEY_SECRET_ID=${11}
 OIDC_CLIENT_ID=${12}
 OIDC_USERNAME_CLAIM=${13}
@@ -428,7 +434,7 @@ required_args=(
   CONTROLPLANE_ASG_NAME
   CONTROLPLANE_ASG_DESIRED_CAPACITY
   S3_BUCKET
-  OIDC_PROXY_DNS
+  OIDC_PROVIDER_URL
   OIDC_KEY_SECRET_ID
   OIDC_CLIENT_ID
   OIDC_USERNAME_CLAIM
@@ -450,8 +456,8 @@ required_args=(
 check_required_args "${required_args[@]}"
 initialize_system "${K8S_NODES_HOSTNAME_MODE}"
 install_packages "${K8S_VERSION}"
-wait_for_resources 600 "OIDC_PROXY_DNS is not up" "curl --silent --head --fail https://${OIDC_PROXY_DNS}"
-prepare_oidc_resources "${OIDC_PROXY_DNS}" "${OIDC_KEY_SECRET_ID}"
+wait_for_resources 600 "OidcProvider is not up" "curl --silent --head --fail https://${OIDC_PROVIDER_URL}"
+prepare_oidc_resources "${OIDC_PROVIDER_URL}" "${OIDC_KEY_SECRET_ID}"
 wait_for_resources 600 "Waiting for NLB to be up" "aws elbv2 describe-load-balancers \
                                                     --names \"${K8S_CLUSTER_NAME}-controlplane-nlb\" \
                                                     --query \"LoadBalancers[?State.Code==`active`].DNSName\" \
@@ -462,7 +468,7 @@ create_kubeadm_config \
   "${K8S_POD_NETWORK_CIDR}" \
   "${K8S_CLUSTER_SERVICE_CIDR}" \
   "${K8S_CLUSTER_DEFAULT_DNS}" \
-  "${OIDC_PROXY_DNS}" \
+  "${OIDC_PROVIDER_URL}" \
   "${OIDC_CLIENT_ID}" \
   "${OIDC_USERNAME_CLAIM}" \
   "${OIDC_GROUPS_CLAIM}"

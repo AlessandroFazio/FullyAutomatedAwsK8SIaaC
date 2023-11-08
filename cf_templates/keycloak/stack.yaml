@@ -486,3 +486,6 @@ Resources:
       VPCZoneIdentifier: 
         - !Ref PrivateSubnet1Id
         - !Ref PrivateSubnet2Id
+
+
+Outputs:
