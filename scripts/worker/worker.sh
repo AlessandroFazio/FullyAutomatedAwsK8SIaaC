@@ -1,160 +1,210 @@
 #!/bin/bash
 
-# Usage: ./joining-controlplane.sh <K8S_VERSION> 
-K8S_CLUSTER_NAME=$1
-K8S_VERSION=$2
-K8S_NODES_HOSTNAME_MODE=$3
+set -xe
 
-if [ -z "${K8S_CLUSTER_NAME}" ]; then
-  echo "K8S_CLUSTER_NAME is required"
-  exit 1
-fi
+function check_required_args() {
+    local args=("$@")
 
-if [ -z "${K8S_VERSION}" ]; then
-  echo "K8S_VERSION is required"
-  exit 1
-fi
+    for arg in "${args[@]}"; do
+        if [ -z "${!arg}" ]; then
+            echo "${arg} is required"
+            exit 1
+        fi
+    done
+}
 
-if [ -z "${K8S_NODES_HOSTNAME_MODE}" ]; then
-  echo "K8S_NODES_HOSTNAME_MODE is required"
-  exit 1
-fi
+function set_hostname() {
+  local hostname_mode=$1
+  local hostname=""
+  if [ "${hostname_mode}" == "private-ip" ]; then
+    hostname=$(curl -s http://169.254.169.254/latest/meta-data/local-hostname)
+  elif [ "${hostname_mode}" == "instance-id" ]; then
+    hostname=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+  else 
+    echo "K8S_NODES_HOSTNAME_MODE must be either private-ip or instance-id"
+    echo "Got ${hostname_mode}"
+    exit 1
+  fi
 
-HOSTNAME=""
-if [ "${K8S_NODES_HOSTNAME_MODE}" == "private-ip" ]; then
-  HOSTNAME=$(curl -s http://169.254.169.254/latest/meta-data/local-hostname)
-elif [ "${K8S_NODES_HOSTNAME_MODE}" == "instance-id" ]; then
-  HOSTNAME=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
-else 
-  echo "K8S_NODES_HOSTNAME_MODE must be either private-ip or instance-id"
-  echo "Got ${K8S_NODES_HOSTNAME_MODE}"
-  exit 1
-fi
+  sudo hostnamectl set-hostname "${hostname}" --static
+}
 
-sudo hostnamectl set-hostname "${HOSTNAME}" --static
+function setup_host_network() {
+    # disable swap and enable ip forwarding
+    sudo swapoff -a
+    sudo sysctl net.ipv4.ip_forward=1
+    sudo sysctl -w vm.max_map_count=262144
 
-sudo swapoff -a
-sudo sysctl net.ipv4.ip_forward=1
-sudo sysctl -w vm.max_map_count=262144
-
-cat <<EOF | sudo tee /etc/modules-load.d/containerd.conf
+    # prepare containerd runtime
+    cat <<EOF | sudo tee /etc/modules-load.d/containerd.conf
 overlay
 br_netfilter
 EOF
 
-sudo modprobe overlay
-sudo modprobe br_netfilter
+    # load modules
+    sudo modprobe overlay
+    sudo modprobe br_netfilter
 
-cat <<EOF | sudo tee etc/sysctl.d/99-kubernetes-cri.conf
+# set system configurations
+    cat <<EOF | sudo tee etc/sysctl.d/99-kubernetes-cri.conf
 net.bridge.bridge-nf-call-ip6tables = 1
 net.bridge.bridge-nf-call-iptables = 1
 net.ipv4.ip_forward = 1
 EOF
+}
 
-sudo apt-get update
-sudo apt-get install -y containerd
+function prepare_for_calico_cni() {
+    sudo mkdir -p /etc/NetworkManager/conf.d/
+    sudo bash -c "cat <<EOF | tee /etc/NetworkManager/conf.d/calico.conf
+    [keyfile]
+    unmanaged-devices=interface-name:cali*;interface-name:tunl*;interface-name:vxlan.calico;interface-name:vxlan-v6.calico;interface-name:wireguard.cali;interface-name:wg-v6.cali
+    EOF"
+}
 
-sudo mkdir -p /etc/containerd
-sudo containerd config default | sudo tee /etc/containerd/config.toml
+function prepare_for_cni() {
+    local cni=$1
+    
+    if [ "${cni}" == "calico" ]; then
+        prepare_for_calico_cni
+    else 
+        echo "CNI ${cni} is not supported"
+        exit 1
+    fi
+}
 
-sudo systemctl restart containerd
-sudo service containerd status
+function initialize_system() {
+  hostname_mode=$1
+  set_hostname "${hostname_mode}"
 
+  setup_host_network
 
-cat <<EOF | sudo tee /etc/modules-load.d/containerd.conf
-overlay
-br_netfilter
-EOF
+  # apply sysctl configurations
+  sudo sysctl --system
+}
 
-sudo modprobe overlay
-sudo modprobe br_netfilter
+function install_and_configure_containerd() {
+    sudo apt-get install -y containerd
+    sudo mkdir -p /etc/containerd
+    sudo containerd config default | sudo tee /etc/containerd/config.toml
+    sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' config.toml
 
-cat <<EOF | sudo tee etc/sysctl.d/99-kubernetes-cri.conf
-net.bridge.bridge-nf-call-ip6tables = 1
-net.bridge.bridge-nf-call-iptables = 1
-net.ipv4.ip_forward = 1
-EOF
+    sudo systemctl restart containerd
+}
 
-sudo sysctl --system
+function install_and_configure_k8s_comps() {
+  local k8s_version=$1
+  sudo apt-get install -y apt-transport-https curl
 
-sudo apt-get update -y && sudo apt-get upgrade -y
-sudo apt-get install -y containerd
+  curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
 
-sudo mkdir -p /etc/containerd
-sudo containerd config default | sudo tee /etc/containerd/config.toml
-
-sudo systemctl restart containerd
-
-sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' config.toml
-
-sudo apt-get update && sudo apt-get install -y apt-transport-https curl
-
-curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
-
-cat <<EOF | sudo tee /etc/apt/sources.list.d/kubernetes.list
+  cat <<EOF | sudo tee /etc/apt/sources.list.d/kubernetes.list
 deb https://apt.kubernetes.io/ kubernetes-xenial main
 EOF
 
-sudo apt update
-sudo apt install -y \
-    kubeadm="${K8S_VERSION}.1-00" \
-    kubelet="${K8S_VERSION}.1-00" \
-    kubectl="${K8S_VERSION}.1-00"
+  sudo apt update
+  sudo apt install -y \
+      kubeadm="${k8s_version}.1-00" \
+      kubelet="${k8s_version}.1-00" \
+      kubectl="${k8s_version}.1-00"
 
-cat <<EOF | sudo tee /etc/crictl.yaml
+  cat <<EOF | sudo tee /etc/crictl.yaml
 runtime-endpoint: unix:///run/containerd/containerd.sock
 image-endpoint: unix:///run/containerd/containerd.sock
 timeout: 10
 EOF
+}
 
-sudo mkdir -p /etc/NetworkManager/conf.d/
-sudo bash -c "cat <<EOF | tee /etc/NetworkManager/conf.d/calico.conf
-[keyfile]
-unmanaged-devices=interface-name:cali*;interface-name:tunl*;interface-name:vxlan.calico;interface-name:vxlan-v6.calico;interface-name:wireguard.cali;interface-name:wg-v6.cali
-EOF"
+function install_packages() {
+  local k8s_version=$1
+  # install necessary packages
+  install_and_configure_containerd
+  install_and_configure_k8s_comps "${k8s_version}"
+}
 
 function get_controlplane_endpoint() {
-  local response=$(aws elbv2 describe-load-balancers \
-                    --names ${K8S_CLUSTER_NAME}-controlplane-nlb \
+    local cluster_name=$1
+    local response=$(aws elbv2 describe-load-balancers \
+                    --names ${cluster_name}-controlplane-nlb \
                     --query 'LoadBalancers[?State.Code==\`active\`].DNSName' \
                     --output text)
-  if [ -z "$response" ]; then
-    echo "controlplane-nlb not found"
-    exit 1
-  fi
-  echo $response
+     if [ -z "$response" ]; then
+        echo "controlplane-nlb endpoint not found"
+        exit 1
+    fi
+    echo $response
 }
+
 function get_worker_join_cmd() {
-  local response=$(aws secretsmanager get-secret-value \
-                    --secret-id "kubernetes/${K8S_CLUSTER_NAME}/cmd/join/worker" \
-                    --query SecretString \
-                    --output text)
-  if [ -z "$response" ]; then
-    echo "controlplane join command not found"
-    exit 1
-  fi
-  echo $response
+    local cluster_name=$1
+    local response=$(aws secretsmanager get-secret-value \
+                        --secret-id "kubernetes/${cluster_name}/cmd/join/worker" \
+                        --query SecretString \
+                        --output text)
+    if [ -z "$response" ]; then
+        echo "controlplane join command not found"
+        exit 1
+    fi
+    echo $response
 }
 
-CONTROLPLANE_ENDPOINT=$(get_worker_join_cmd)
-JOIN_WORKER_CMD=$(get_controlplane_join_cmd)
-TOKEN=$(echo "${JOIN_WORKER_CMD}" | awk '{print $5}')
-CERT_HASH=$(echo "${JOIN_WORKER_CMD}" | awk '{print $7}')
-
-cat <<EOF | tee kubeadm-join-config.yaml
+function create_kubeadm_config() {
+    local config_filepath=$1
+    local cluster_name=$2
+    local controlplane_endpoint=$(get_controlplane_endpoint "${cluster_name}")
+    local worker_join_cmd=$(get_controlplane_join_cmd "${cluster_name}")
+    local token=$(echo "${worker_join_cmd}" | awk '{print $5}')
+    local cert_hash=$(echo "${worker_join_cmd}" | awk '{print $7}')
+  
+    cat <<EOF | tee "${config_filepath}"
+---
 apiVersion: kubeadm.k8s.io/v1beta3
 kind: JoinConfiguration
 discovery:
   bootstrapToken:
-    token: "${TOKEN}"
-    apiServerEndpoint: "${CONTROLPLANE_ENDPOINT}:6443"
+    token: "${token}"
+    apiServerEndpoint: "${controlplane_endpoint}:6443"
     caCertHashes:
-      - "${CERT_HASH}"
+      - "${cert_hash}"
 nodeRegistration:
-  name: "${HOSTNAME}"
+  name: $(hostname)
   kubeletExtraArgs:
     cloud-provider: external 
     container-runtime-endpoint: unix:///run/containerd/containerd.sock
 EOF
+}
 
-sudo kubeadm join --config kubeadm-join-config.yaml
+function run_kubeadm_join() {
+  local config_filepath=$1
+  local log_file=$2
+  sudo kubeadm join --config "${config_filepath}" | tee "${log_file}"
+}
+
+### MAIN ###
+# Usage: ./joining-controlplane.sh <K8S_CLUSTER_NAME> <K8S_VERSION> <K8S_NODES_HOSTNAME_MODE>
+K8S_CLUSTER_NAME=$1
+K8S_VERSION=$2
+K8S_NODES_HOSTNAME_MODE=$3
+CNI="calico"
+
+# Constants
+KUBEADM_CONFIG_FILEPATH="/home/ubuntu/kubeadm-config.yaml"
+KUBEADM_LOG_FILEPATH="/home/ubuntu/kubeadm-join.out"
+
+required_args=(
+    K8S_CLUSTER_NAME
+    K8S_VERSION
+    K8S_NODES_HOSTNAME_MODE
+)
+
+check_required_args "${required_args[@]}"
+initialize_system "${K8S_NODES_HOSTNAME_MODE}"
+install_packages "${K8S_VERSION}"
+prepare_for_cni "${CNI}"
+create_kubeadm_config \
+  "${KUBEADM_CONFIG_FILEPATH}" \
+  "${K8S_CLUSTER_NAME}" 
+
+run_kubeadm_init "${KUBEADM_CONFIG_FILEPATH}" "${KUBEADM_LOG_FILEPATH}"
+
+
+

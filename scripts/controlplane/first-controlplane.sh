@@ -316,7 +316,7 @@ function upload_cmd_to_sm() {
   local identifier=$2
   local cmd=$2
   aws secretsmanager create-secret \
-    --name "kubernetes/${cluster_name}/cmd/${identifier}" \
+    --name "kubernetes/${cluster_name}/cmd/join/${identifier}" \
     --secret-string "${cmd}"
 }
 
@@ -487,9 +487,11 @@ setup_cni "${CNI}" "${K8S_POD_NETWORK_CIDR}" "${S3_BUCKET}"
 wait_for_resources 300 "Waiting for taint on node to be removed" \
   "kubectl describe node '$(hostname)' | grep 'Taints' | grep -q -v '${TAINT_NETWORK_NOT_READY}' 2>/dev/null"
 
-aws s3 cp s3://${S3_BUCKET}/scripts/addons/eks-irsa-webhook.sh /tmp/eks-irsa-webhook.sh
-chmod +x /tmp/eks-irsa-webhook.sh
-bash /tmp/eks-irsa-webhook.sh \
+install_addon \
+  "${S3_BUCKET}" \
+  "${S3_ADDONS_BASE_PATH}" \
+  "eks-irsa-webhook.sh" \
+  "${LOCAL_ADDONS_DIR}" \
   "${EKS_IRSA_WEBHOOK_SA_NAMESPACE}" \
   "amazon/amazon-eks-pod-identity-webhook:latest"
 
