@@ -29,3 +29,5 @@ metadata:
 driver: ebs.csi.aws.com
 deletionPolicy: Delete
 EOF
+
+kubectl apply -f /home/ubuntu/snapshot-classes/aws-ebs-snapshot-class.yaml

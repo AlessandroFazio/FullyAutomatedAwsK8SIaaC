@@ -157,7 +157,7 @@ Parameters:
 
 Resources:
 
-  EcrAccessPolicy:
+  ControlPlaneEcrAccessPolicy:
     Type: AWS::IAM::Policy
     Properties:
       PolicyName: EcrPrivateRepositoryPullOnlyPolicy
@@ -175,8 +175,10 @@ Resources:
               - ecr:ListImages
               - ecr:BatchGetImage
             Resource: "*"
+      Roles:
+        - !Ref ControlPlaneInstanceIAMRole
 
-  S3BucketAccessPolicy:
+  ControlPlaneS3BucketAccessPolicy:
     Type: AWS::IAM::Policy
     Properties:
       PolicyName: S3WriteOnlyAccessPolicy
@@ -191,8 +193,10 @@ Resources:
               - "s3:DescribeBucket"
             Resource:
               - Fn::Sub: arn:aws:s3:::${S3BucketName}/*
+      Roles:
+        - !Ref ControlPlaneInstanceIAMRole
   
-  SecretManagerAccessPolicy:
+  ControlPlaneSecretManagerAccessPolicy:
     Type: AWS::IAM::Policy
     Properties:
       PolicyName: ControlPlaneSecretManagerAccessPolicy
@@ -215,8 +219,10 @@ Resources:
               - "secretsmanager:ListSecretVersionIds"
             Resource:
               - Fn::Sub: "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:keycloak/kubernetes/*"
+      Roles:
+        - !Ref ControlPlaneInstanceIAMRole
   
-  EC2AccessPolicy:
+  ControlPlaneEC2AccessPolicy:
     Type: AWS::IAM::Policy
     Properties: 
       PolicyName: EC2AccessPolicy
@@ -231,8 +237,10 @@ Resources:
               - autoscaling:SetDesiredCapacity
               - elasticloadbalancing:Describe*
             Resource: "*"
+      Roles:
+        - !Ref ControlPlaneInstanceIAMRole
   
-  ACMAccessPolicy:
+  ControlPlaneACMAccessPolicy:
     Type: AWS::IAM::Policy
     Properties:
       PolicyName: ACMAccessPolicy
@@ -245,6 +253,8 @@ Resources:
               - acm:ListCertificates
               - acm:GetCertificate
             Resource: "*"
+      Roles:
+        - !Ref ControlPlaneInstanceIAMRole
 
   ControlPlaneInstanceIAMRole:
     Type: AWS::IAM::Role
@@ -260,12 +270,6 @@ Resources:
             Action:
               - sts:AssumeRole
       Path: /
-      Policies:
-        - !Ref EcrAccessPolicy
-        - !Ref S3BucketAccessPolicy
-        - !Ref SecretManagerAccessPolicy
-        - !Ref EC2AccessPolicy
-        - !Ref ACMAccessPolicy
       Tags:
         - Key: Name
           Value: ControlPlaneInstanceIAMRole
@@ -281,7 +285,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupName: ControlPlaneNlbSecurityGroup
-      Description: Security Group for ControlPlane NLB
+      GroupDescription: Security Group for ControlPlane NLB
       VpcId: !Ref VpcId
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -349,7 +353,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupName: controlplane-sg
-      Description: Security Group for Zookeeper Instances
+      GroupDescription: Security Group for Control Plane
       VpcId: !Ref VpcId
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -403,14 +407,6 @@ Resources:
         - Key: Name
           Value: ControlPlaneSecurityGroup
 
-  ControlPlaneKeyPair:
-   Type: 'AWS::EC2::KeyPair'
-   Properties:
-     KeyName: ControlPlaneKeyPair
-     Tags:
-       - Key: Name
-         Value: ControlPlaneKeyPair
-
   ControlPlanePlacementGroup:
     Type: AWS::EC2::PlacementGroup
     Properties:
@@ -428,8 +424,6 @@ Resources:
         InstanceType: !Ref ControlPlaneInstanceType
         IamInstanceProfile:
           Arn: !GetAtt ControlPlaneInstanceProfile.Arn
-          Name: ControlPlaneInstanceProfile
-        KeyName: !GetAtt ControlPlaneKeyPair.KeyName
         SecurityGroupIds:
           - !Ref ControlPlaneSecurityGroup  # Reference security group(s) by ID
         BlockDeviceMappings:
@@ -446,6 +440,8 @@ Resources:
         UserData:
           Fn::Base64: !Sub |
             #!/bin/bash
+
+            exec > >(tee /var/log/user-data-stdout.log) 2> >(tee /var/log/user-data-stderr.log >&2)
             apt update -y && apt upgrade -y
             apt install -y jq
             apt install -y unzip
@@ -583,12 +579,6 @@ Outputs:
   ControlPlaneSecurityGroup:
     Description: Security Group for Control Plane
     Value: !Ref ControlPlaneSecurityGroup
-
-  ControlPlaneKeyPair:
-    Description: Key Pair for Control Plane
-    Value: !Ref ControlPlaneKeyPair
-    Export:
-      Name: !Sub `${ProjectName}-${EnvironmentName}-${StackName}-ControlPlaneKeyPair`
 
   ControlPlanePlacementGroup:
     Description: Placement Group for Control Plane

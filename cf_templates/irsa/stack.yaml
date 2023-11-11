@@ -40,11 +40,33 @@ Parameters:
 
 Resources:
 
+  OIDCProviderThumbprint: # TODO: complete the thumbprint getter lambda
+    Type: Custom::OIDCProviderThumbprint
+    Properties:
+      ServiceToken: !GetAtt ThumbprintGetterLambdaFn.Arn
+      OidcProviderUrl: !Ref OidcProviderUrl
+
+  ThumbprintGetterLambdaFn:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-ThumbprintGetterLambdaFn'
+      Architectures: 
+        - x86_64
+      Code: 
+        ImageUri: !Ref ThumbprintGetterLambdaImageUri
+      Description: >-
+          Get the thumbprint of the OIDC provider
+      MemorySize: 128
+      PackageType: Image
+      Timeout: 60
+
   OIDCProvider:
     Type: AWS::IAM::OIDCProvider
     Properties:
+      ThumbprintList:
+        - !GetAtt OIDCProviderThumbprint.last.sha1
       Url: !Ref OidcProviderUrl
-      ClientIDList:
+      ClientIdList:
         - sts.amazonaws.com
 
   EbsCsiDriverIAMRole:
@@ -60,19 +82,14 @@ Resources:
             Action: sts:AssumeRoleWithWebIdentity
             Condition:
               StringEquals:
-                !Sub "${OidcProviderUrl}:aud": "sts.amazonaws.com"
-                !Sub "${OidcProviderUrl}:sub": "system:serviceaccount:${EbsCsiDriverSaNamespace}:ebs-csi-controller"
+                "${OidcProviderUrl}:aud": "sts.amazonaws.com"
+                "${OidcProviderUrl}:sub": "system:serviceaccount:${EbsCsiDriverSaNamespace}:ebs-csi-controller"
       Path: /
-      Policies:
-        - !Ref EbsCsiDriverPolicy
 
   AwsEbsCsiDriverPolicy:
     Type: AWS::IAM::Policy
     Properties:
       PolicyName: AwsEbsCsiDriverPolicy
-      Roles:
-        - !Ref ControlPlaneInstanceIAMRole
-        - !Ref WorkerInstanceIAMRole
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -161,6 +178,8 @@ Resources:
               - kms:GenerateDataKeyWithoutPlaintext
               - kms:CreateGrant
             Resource": "*"
+      Roles:
+        - !Ref EbsCsiDriverIAMRole
 
   AwsCloudProviderIAMRole:
     Type: AWS::IAM::Role
@@ -175,11 +194,9 @@ Resources:
             Action: sts:AssumeRoleWithWebIdentity
             Condition:
               StringEquals:
-                !Sub "${OidcProviderUrl}:aud": "sts.amazonaws.com"
-                !Sub "${OidcProviderUrl}:sub": "system:serviceaccount:${AwsCloudProviderSaNamespace}:aws-cloud-provider"
+                "${OidcProviderUrl}:aud": "sts.amazonaws.com"
+                "${OidcProviderUrl}:sub": "system:serviceaccount:${AwsCloudProviderSaNamespace}:aws-cloud-provider"
       Path: /
-      Policies:
-        - !Ref AwsCloudProviderPolicy
 
   AwsCloudProviderPolicy:                # TODO: ebs.csi.aws.com/agent-not-ready:NoExecute is a taint for avoiding race conditions when scaling node groups which should run pods with EBS volumes. 
     Type: AWS::IAM::Policy               # TODO: This taint is added by the EBS CSI driver when it is not ready to serve volume attachment requests. 
@@ -248,7 +265,9 @@ Resources:
               - kms:DescribeKey
             Resource:
               - "*"
-  
+      Roles:  
+        - !Ref AwsCloudProviderIAMRole
+
   AwsLoadBalancerControllerIAMRole:
     Type: AWS::IAM::Role
     Properties:
@@ -262,11 +281,9 @@ Resources:
             Action: sts:AssumeRoleWithWebIdentity
             Condition:
               StringEquals:
-                !Sub "${OidcProviderUrl}:aud": "sts.amazonaws.com"
-                !Sub "${OidcProviderUrl}:sub": "system:serviceaccount:${AwsLoadBalancerControllerSaNamespace}:aws-load-balancer-controller"
+                "${OidcProviderUrl}:aud": "sts.amazonaws.com"
+                "${OidcProviderUrl}:sub": "system:serviceaccount:${AwsLoadBalancerControllerSaNamespace}:aws-load-balancer-controller"
       Path: /
-      Policies:
-        - !Ref AwsLoadBalancerControllerPolicy
 
   AwsLoadBalancerControllerPolicy:
     Type: AWS::IAM::Policy
@@ -449,6 +466,8 @@ Resources:
           - elasticloadbalancing:RemoveListenerCertificates
           - elasticloadbalancing:ModifyRule
           Resource: "*"
+      Roles:
+        - !Ref AwsLoadBalancerControllerIAMRole
 
   ClusterAutoScalerIAMRole:
     Type: AWS::IAM::Role
@@ -463,11 +482,9 @@ Resources:
             Action: sts:AssumeRoleWithWebIdentity
             Condition:
               StringEquals:
-                !Sub "${OidcProviderUrl}:aud": "sts.amazonaws.com"
-                !Sub "${OidcProviderUrl}:sub": "system:serviceaccount:${ClusterAutoScalerSaNamespace}:cluster-autoscaler"
+                "${OidcProviderUrl}:aud": "sts.amazonaws.com"
+                "${OidcProviderUrl}:sub": "system:serviceaccount:${ClusterAutoScalerSaNamespace}:cluster-autoscaler"
       Path: /
-      Policies:
-        - !Ref ClusterAutoScalerPolicy
 
   ClusterAutoScalerPolicy:
     Type: AWS::IAM::Policy
@@ -494,7 +511,26 @@ Resources:
               - ec2:GetInstanceTypesFromInstanceRequirements
               - eks:DescribeNodegroup
             Resource: "*"
-  
+      Roles:
+        - !Ref ClusterAutoScalerIAMRole
+
+  NodeTerminationHandlerIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: NodeTerminationHandlerIAMRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/${OidcProviderUrl}"
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                "${OidcProviderUrl}:aud": "sts.amazonaws.com"
+                "${OidcProviderUrl}:sub": "system:serviceaccount:${NodeTerminationHandlerSaNamespace}:aws-node-termination-handler"
+      Path: /
+
   NodeTerminationHandlerPolicy:
     Type: AWS::IAM::Policy
     Properties:
@@ -511,25 +547,8 @@ Resources:
               - sqs:DeleteMessage
               - sqs:ReceiveMessage
             Resource: "*"
-  
-  NodeTerminationHandlerIAMRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: NodeTerminationHandlerIAMRole
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/${OidcProviderUrl}"
-            Action: sts:AssumeRoleWithWebIdentity
-            Condition:
-              StringEquals:
-                !Sub "${OidcProviderUrl}:aud": "sts.amazonaws.com"
-                !Sub "${OidcProviderUrl}:sub": "system:serviceaccount:${NodeTerminationHandlerSaNamespace}:aws-node-termination-handler"
-      Path: /
-      Policies:
-        - !Ref NodeTerminationHandlerPolicy
+      Roles:
+        - !Ref NodeTerminationHandlerIAMRole
 
 Outputs:
   EbsCsiDriverIAMRoleArn:
@@ -551,4 +570,3 @@ Outputs:
   NodeTerminationHandlerIAMRoleArn:
     Description: NodeTerminationHandlerIAMRoleArn
     Value: !GetAtt NodeTerminationHandlerIAMRole.Arn
-

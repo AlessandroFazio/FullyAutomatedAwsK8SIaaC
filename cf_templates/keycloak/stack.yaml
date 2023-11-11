@@ -18,7 +18,7 @@ Parameters:
     Type: String
     Description: VPC ID
   
-  VpcCidr:
+  VpcCIDR:
     Type: String
     Description: VPC CIDR
   
@@ -115,6 +115,7 @@ Resources:
   KeycloakUserAuroraAccessPolicy:
     Type: "AWS::IAM::Policy"
     Properties:
+      PolicyName: "KeycloakUserAuroraAccessPolicy"
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -123,12 +124,14 @@ Resources:
               - rds-db:connect
             Resource:
               - !Sub "arn:aws:rds-db:${AWS::Region}:${AWS::AccountId}:dbuser:*/${KeycloakAuroraDBUser}"
+      Roles:
+        - !Ref KeycloakInstanceRole
+      
   
-  AWSS3ReadWritePrefixedS3BucketPolicy:
+  KeycloakS3ReadWritePrefixedS3BucketPolicy:
     Type: "AWS::IAM::Policy"
     Properties:
-      Description: "Allows read and write access to a specific S3 bucket"
-      ManagedPolicyName: "S3ReadWritePolicy"
+      PolicyName: "S3ReadWritePolicy"
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -146,12 +149,13 @@ Resources:
             Resource: 
               - "arn:aws:s3:::${MainS3BucketName}/scripts/keycloak/*"
               - "arn:aws:s3:::${MainS3BucketName}/ssh/*"
+      Roles:
+        - !Ref KeycloakInstanceRole
   
-  CreateSecretsManagerPolicy:
+  KeycloakCreateSecretsManagerPolicy:
     Type: "AWS::IAM::Policy"
     Properties:
-      Description: "Allows actions on Secrets Manager secrets that start with 'keycloak'"
-      ManagedPolicyName: "SecretsManagerPolicy"
+      PolicyName: "SecretsManagerPolicy"
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -163,12 +167,13 @@ Resources:
               - "secretsmanager:DescribeSecret"
             Resource:
               - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/keycloak/*"
+      Roles:
+        - !Ref KeycloakInstanceRole
   
-  EC2AccessPolicy:
-    Type: "AWS::IAM::ManagedPolicy"
+  KeycloakEC2AccessPolicy:
+    Type: "AWS::IAM::Policy"
     Properties:
-      Description: "Allows actions on EC2 services"
-      ManagedPolicyName: "EC2AccessPolicy"
+      PolicyName: "EC2AccessPolicy"
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -180,6 +185,23 @@ Resources:
             Action:
               - "autoscaling:SetDesiredCapacity"
             Resource: "arn:aws:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/${KeycloakAsgName}"
+      Roles:
+        - !Ref KeycloakInstanceRole
+  
+  KeycloakCloudFormationSignalPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: "CloudFormationSignalPolicy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "cloudformation:DescribeStackResource"
+              - "cloudformation:SignalResource"
+            Resource: "*"
+      Roles:
+        - !Ref KeycloakInstanceRole
 
   KeycloakInstanceRole:
     Type: "AWS::IAM::Role"
@@ -194,11 +216,6 @@ Resources:
                 - "ec2.amazonaws.com"
             Action:
               - "sts:AssumeRole"
-      Policies:
-        - !Ref CreateSecretsManagerPolicy
-        - !Ref AWSS3ReadWritePrefixedS3BucketPolicy
-        - !Ref EC2AccessPolicy
-        - !Ref KeycloakUserAuroraAccessPolicy
 
   KeycloakTopLevelDomainPublicHostedZone:
     Type: AWS::Route53::HostedZone
@@ -241,7 +258,7 @@ Resources:
         - IpProtocol: tcp
           FromPort: 443
           ToPort: 443
-          CidrIp:
+          CidrIp: "0.0.0.0/0"
       SecurityGroupEgress:
         - IpProtocol: tcp
           FromPort: 8080
@@ -253,10 +270,8 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:    
       IpAddressType: ipv4
-      LoadBalancerAttributes: 
-        - LoadBalancerAttribute
       Name: keycloak-alb
-      Type: ipv4
+      Type: application
       Scheme: internet-facing
       SecurityGroups:
         - !Ref KeycloakAlbSecurityGroup
@@ -286,13 +301,14 @@ Resources:
       Protocol: HTTP
       ProtocolVersion: HTTP1
       TargetGroupAttributes: 
-        - stickiness.enabled: true
-        - stickiness.type: app_cookie
-        - stickiness.app_cookie.cookie_name: AUTH_SESSION_ID
-        - stickiness.app_cookie.duration_seconds: 86400
-      Targets: 
-        - TargetDescription
-      TargetType: instance
+        - Key: stickiness.enabled
+          Value: true
+        - Key: stickiness.type
+          Value: app_cookie
+        - Key: stickiness.app_cookie.cookie_name
+          Value: AUTH_SESSION_ID
+        - Key: stickiness.app_cookie.duration_seconds
+          Value: 86400
       UnhealthyThresholdCount: 2
       VpcId: !Ref VpcId
       Tags:
@@ -312,12 +328,6 @@ Resources:
       DefaultActions:
         - Type: "forward"
           TargetGroupArn: !Ref KeycloakAlbTargetGroup
-
-  # 4. Keycloak Key Pair (created here)  
-  KeycloakInstaceKeyPair:
-    Type: AWS::EC2::KeyPair::KeyName
-    Properties:
-      KeyName: keycloakKeyPair
       
   # 5. Security Group for Keycloak Instances
   KeycloakInstanceSecurityGroup:
@@ -333,15 +343,15 @@ Resources:
         - IpProtocol: tcp
           FromPort: 8080
           ToPort: 8080
-          CidrIp: !Ref VpcCidr
+          CidrIp: !Ref VpcCIDR
         - IpProtocol: tcp
           FromPort: 8443
           ToPort: 8443
-          CidrIp: !Ref VpcCidr
+          CidrIp: !Ref VpcCIDR
         - IpProtocol: tcp
           FromPort: 7800
           ToPort: 7800
-          CidrIp: !Ref VpcCidr
+          CidrIp: !Ref VpcCIDR
       SecurityGroupEgress:
         - IpProtocol: -1 
           CidrIp: 0.0.0.0/0
@@ -366,11 +376,8 @@ Resources:
       LaunchTemplateData:
         ImageId: ami-0261755bbcb8c4a84 # Ubuntu AWS 20.04 ami
         InstanceType: !Ref KeycloakInstanceType
-        KeyName: !Ref KeycloakInstaceKeyPair
         IamInstanceProfile:
-          Arn: !GetAtt
-            - KeycloakInstanceProfile
-            - Arn
+          Arn: !GetAtt KeycloakInstanceProfile.Arn
         SecurityGroupIds:
           - !Ref KeycloakInstanceSecurityGroup
         BlockDeviceMappings:
@@ -389,6 +396,9 @@ Resources:
           Fn::Base64:
            Fn::Base64: !Sub |
             #!/bin/bash 
+
+            exec > >(tee /var/log/user-data-stdout.log) 2> >(tee /var/log/user-data-stderr.log >&2)
+
             sudo apt update -y
             apt install -y jq
             apt install -y unzip
@@ -407,13 +417,13 @@ Resources:
               local response=$(aws ec2 describe-instances \
                                 --filters "Name=tag:Name,Values=keycloak" \
                                 --query "Reservations[].Instances" | jq '. | length')
-              if [ -z "${response}" ]; then
+              if [ -z "$response" ]; then
                   echo "No instances found. An error occurred. Exiting."
                   exit 1
-              elif [ "${response}" -lt "1" ]; then
+              elif [ "$response" -lt "1" ]; then
                   echo "No instances found. An error occurred. Exiting."
                   exit 1
-              elif [ "${response}" -eq "1" ]; then
+              elif [ "$response" -eq "1" ]; then
                   echo "This is the first node."
                   return 0
               else
@@ -441,7 +451,10 @@ Resources:
                                         ${KeycloakAsgName} \
                                         ${KeycloakAsgDesiredCapacity}" \
                                         ${KeycloakAdminPasswordSecretId} \
-                                        ${KubernetesKeySecretId}
+                                        ${KubernetesKeySecretId} \
+                                        ${AWS::StackName} \
+                                        KeycloakAutoScalingGroup
+                                        
             else
               echo "Starting additional node."
               aws s3 cp s3://${MainS3BucketName}/scripts/keycloak/joining-node.sh /tmp/joining-node.sh
@@ -486,6 +499,23 @@ Resources:
       VPCZoneIdentifier: 
         - !Ref PrivateSubnet1Id
         - !Ref PrivateSubnet2Id
-
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
 
 Outputs:
+  KeycloakAlbDnsName:
+    Description: "DNS Name of the Keycloak ALB"
+    Value: !GetAtt 'KeycloakAlb.DNSName'
+
+  KubernetesOidcProviderUrl:
+    Description: "Keycloak Admin Console URL"
+    Value: !Sub https://${KeycloakAlbSubDomainName}/realms/kubernetes
+
+  KeycloakAdminUrl:
+    Description: "Keycloak Application URL"
+    Value: !Sub "https://${KeycloakAlbSubDomainName}/admin" # TODO: check this
+
+  KeycloakInstanceSecurityGroupId:
+    Description: "Security Group ID for Keycloak Instances"
+    Value: !Ref KeycloakInstanceSecurityGroup

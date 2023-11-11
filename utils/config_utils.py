@@ -5,7 +5,7 @@ import logging.config
 import yaml
 import os
 
-from constants import DEFAULT_CONFIG, TEMPLATES_DIR
+from constants import DEFAULT_CONFIG, TEMPLATES_DIR, KEYCLOAK_ADMIN_PWD_SECRET_ID
 
 def parse_args() -> Dict[str, str]:
     """Parse command line arguments."""
@@ -55,8 +55,11 @@ def generate_cloudformation_parameters(key: str, value: str) -> Dict[str, Any]:
     }
 
 
-def auto_configure_cloudformation(config: Dict[str, Any], bucket_name: str) -> None:
+def auto_configure_cloudformation(config: Dict[str, Any], bucket_name: str, kc_cache_bucket_name: str, image_uri: str) -> None:
     """Auto configure cloudformation."""
+
+    config["cloudformation"]["TemplateURL"] = \
+        f"https://s3.amazonaws.com/{bucket_name}/{TEMPLATES_DIR}/main.yaml"
 
     config["cloudformation"]["Parameters"].append(
         generate_cloudformation_parameters("EnvironmentName", 
@@ -67,9 +70,22 @@ def auto_configure_cloudformation(config: Dict[str, Any], bucket_name: str) -> N
     
     config["cloudformation"]["Parameters"].append(
         generate_cloudformation_parameters("S3BucketName", bucket_name))
+
+    config["cloudformation"]["Parameters"].append(generate_cloudformation_parameters(
+        "StackName", f"{config['project']['name']}-{config['project']['environment']['name']}"))
+
+    config["cloudformation"]["Parameters"].append(generate_cloudformation_parameters(
+        "AuroraDBBootStrapLambdaRepositoryName", 
+        f"{config['project']['name']}/{config['project']['environment']['name']}/lambda/dbbootstrap"))
     
-    config["cloudformation"]["TemplateURL"] = \
-        f"https://s3.amazonaws.com/{bucket_name}/{TEMPLATES_DIR}/main.yaml"
+    config["cloudformation"]["Parameters"].append(generate_cloudformation_parameters(
+        "AuroraDBBootStrapLambdaImageUri", image_uri))
+    
+    config["cloudformation"]["Parameters"].append(generate_cloudformation_parameters(
+        "KeycloakAdminPasswordSecretId", KEYCLOAK_ADMIN_PWD_SECRET_ID))
+
+    config["cloudformation"]["Parameters"].append(generate_cloudformation_parameters(
+        "KeycloakCacheS3BucketName", kc_cache_bucket_name))
 
 
 def parse_default_config() -> Dict[str, Any]:

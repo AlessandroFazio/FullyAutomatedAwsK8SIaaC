@@ -11,21 +11,21 @@ Parameters:
     Type: String
     Description: The ProjectName tag is used to designate the project name associated with the given AWS resource.
 
-  EnvironmentType:
+  EnvironmentName: 
     Type: String
-    Description: The environment tag is used to designate the Environment Stage of the associated AWS resource.
+    Description: The EnvironmentName tag is used to designate the Environment Name associated with the given AWS resource.
   
   StackName:
     Type: String
     Description: The StackName tag is used to designate the Stack Name associated with the given AWS resource.
   
-  VpcCidr:
-    Type: String
-    Description: The VpcCidr tag is used to designate the VPC CIDR block associated with the given AWS resource.
-  
   VpcId:
     Type: String
     Description: The VpcId tag is used to designate the VPC ID associated with the given AWS resource.
+  
+  VpcCIDR:
+    Type: String
+    Description: The VpcCidr tag is used to designate the VPC CIDR block associated with the given AWS resource.
   
   PrivateSubnet1Id:
     Type: String
@@ -56,6 +56,7 @@ Parameters:
     Type: String
      
   DBInstanceClass:
+    Type: String
     Default: db.r6g.large
     Description: Database Instance Class
 
@@ -80,6 +81,7 @@ Parameters:
     Type: String
 
 
+
 ###############################################################################
 # Parameter Groups
 ###############################################################################
@@ -91,24 +93,24 @@ Metadata:
         Label:
           default: Environment
         Parameters:
-          - EnvironmentType
+          - EnvironmentName
       -
         Label:
           default: DB Parameters
         Parameters:
-          - DBName
+          - MasterDBName
           - DBPort
-          - DBUsername
+          - MasterDBUsername
           - DBInstanceClass
           - DBEngineVersion
           - DBSnapshotName
-          - LambdaBootStrapS3Bucket
-          - LambdaBootStrapS3Key
+          - LambdaBootStrapSQLStatementS3Bucket
+          - LambdaBootStrapSQLStatementS3Key
       -
         Label:
           default: Networking
         Parameters:
-          - VpcCidr
+          - VpcCIDR
           - VpcId
           - PrivateSubnet1Id
           - PrivateSubnet2Id
@@ -117,7 +119,7 @@ Metadata:
           default: Mandatory Tags
         Parameters:
           - ProjectName
-          - EnvironmentType
+          - EnvironmentName
           
 
 ###############################################################################
@@ -143,10 +145,11 @@ Mappings:
 Conditions:
   IsUseDBSnapshot: !Not [!Equals [!Ref DBSnapshotName, ""]]
   IsNotUseDBSnapshot: !Not [Condition: IsUseDBSnapshot]
-  IsProd: !Equals [!Ref EnvironmentStage, 'prod']
+  IsProd: !Equals [!Ref EnvironmentName, 'prod']
+  IsReplica: !Or [!Equals [!Ref EnvironmentName, 'pre-prod'], Condition: IsProd]
   DoDBBootStrap: !And
-    - !Not [!Equals [!Ref LambdaBootStrapS3Bucket, '']]
-    - !Not [!Equals [!Ref LambdaBootStrapS3Key, '']]
+    - !Not [!Equals [!Ref LambdaBootStrapSQLStatementS3Bucket, '']]
+    - !Not [!Equals [!Ref LambdaBootStrapSQLStatementS3Key, '']]
     - !Not [Condition: IsUseDBSnapshot]
   DoEnableIAM: !Not [!Equals [!Ref DBEngineVersion, '9.6.8']]
   
@@ -260,12 +263,12 @@ Resources:
     Condition: IsNotUseDBSnapshot
     Type: AWS::SecretsManager::Secret
     Properties:
-      Name: !Join ['/', [!Ref EnvironmentType, 'aurora-pg', !Ref 'AWS::StackName']]
+      Name: !Join ['/', [!Ref EnvironmentName, 'aurora-pg', !Ref 'AWS::StackName']]
       Description: !Join ['', ['Aurora PostgreSQL Master User Secret ', 'for CloudFormation Stack ', !Ref 'AWS::StackName']]
       Tags:
         -
-          Key: EnvironmentType
-          Value: !Ref EnvironmentType
+          Key: EnvironmentName
+          Value: !Ref EnvironmentName
         -
           Key: DatabaseEngine
           Value: 'Aurora PostgreSQL'
@@ -325,14 +328,15 @@ Resources:
       EnableIAMDatabaseAuthentication: !If [DoEnableIAM, true, !Ref "AWS::NoValue"]
       Tags:
         -
-          Key: EnvironmentType
-          Value: !Ref EnvironmentType
+          Key: EnvironmentName
+          Value: !Ref EnvironmentName
         -
           Key: ProjectName
           Value: !Ref ProjectName
         
   AuroraDBFirstInstance:
     Type: AWS::RDS::DBInstance
+    DependsOn: DBBootStrapLambdaFn
     Properties:
       CopyTagsToSnapshot: true  
       DBInstanceClass:
@@ -351,8 +355,8 @@ Resources:
       PerformanceInsightsRetentionPeriod: !If [IsProd, 731, 7]
       Tags:
         -
-          Key: EnvironmentType
-          Value: !Ref EnvironmentType
+          Key: EnvironmentName
+          Value: !Ref EnvironmentName
         -
           Key: ProjectName
           Value: !Ref ProjectName
@@ -380,8 +384,8 @@ Resources:
       PerformanceInsightsRetentionPeriod: !If [IsProd, 731, 7]
       Tags:
         -
-          Key: EnvironmentType
-          Value: !Ref EnvironmentType
+          Key: EnvironmentName
+          Value: !Ref EnvironmentName
         -
           Key: ProjectName
           Value: !Ref ProjectName
@@ -411,7 +415,7 @@ Resources:
               - 
                 Effect: "Allow"
                 Action: "secretsmanager:GetSecretValue"
-                Resource: !Ref AuroraMasterSecret
+                Resource: "*"
         - 
           PolicyName: "ECRPermissionsPolicy"
           PolicyDocument:
@@ -441,7 +445,7 @@ Resources:
                   - "s3:PutObject"
                   - "s3:ListBucket"
                 Resource:
-                  - !Sub "arn:aws:s3:::${LambdaBootStrapS3Bucket}/${LambdaBootStrapS3Key}"
+                  - !Sub "arn:aws:s3:::${LambdaBootStrapSQLStatementS3Bucket}/${LambdaBootStrapSQLStatementS3Key}"
 
   DBBootStrapLambdaFnSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -480,8 +484,8 @@ Resources:
         Variables: 
           DBHost: !GetAtt 'AuroraDBCluster.Endpoint.Address'
           DBPort: !GetAtt 'AuroraDBCluster.Endpoint.Port'
-          DBUser: !Ref DBUsername
-          DBName: !Ref DBName
+          DBUser: !Ref MasterDBUsername
+          DBName: !Ref MasterDBName
           Secret_ARN: !Ref AuroraMasterSecret
           Region_Name: !Ref "AWS::Region"
           SQLScriptS3Bucket: !Ref LambdaBootStrapSQLStatementS3Bucket
@@ -508,7 +512,7 @@ Resources:
       Endpoint: !GetAtt DBBootStrapLambdaFn.Arn
       Protocol: lambda
       FilterPolicyScope: MessageAttributes
-      FilterPolicy: { "EventID": [{"string": ["=", "RDS-EVENT-0088"]}] }
+      FilterPolicy: { "EventID": ["RDS-EVENT-0088"] }
       TopicArn: !Ref DBSNSTopic
 
   DatabaseInstanceEventSubscription:
@@ -517,11 +521,11 @@ Resources:
       Enabled: true 
       SubscriptionName: !Sub '${AWS::StackName}-DBInstanceEventSubscription'
       EventCategories:
-      - notification
+        - notification
       SnsTopicArn: !Ref DBSNSTopic
       SourceIds: 
-      - !Ref AuroraDBFirstInstance
-      - !If [IsReplica, !Ref AuroraDBSecondInstance, !Ref "AWS::NoValue"]
+        - !Ref AuroraDBFirstInstance
+        - !If [IsReplica, !Ref AuroraDBSecondInstance, !Ref "AWS::NoValue"]
       SourceType: 'db-instance'
 
 ###############################################################################
@@ -539,10 +543,10 @@ Outputs:
     Value: !GetAtt 'AuroraDBCluster.Endpoint.Port'
   MasterDBUsername:
     Description: 'Database master username'
-    Value: !Ref DBUsername
+    Value: !Ref MasterDBUsername
   MasterDBName:
     Description: 'Database Name'
-    Value: !Ref DBName
+    Value: !Ref MasterDBName
   PSQLCommandLine:    
     Description: PSQL Command Line
     Value: !Join
@@ -552,6 +556,6 @@ Outputs:
                - ' --port='
                - !GetAtt 'AuroraDBCluster.Endpoint.Port'
                - ' --username='
-               - !Ref DBUsername
+               - !Ref MasterDBUsername
                - ' --dbname='
-               - !Ref DBName
+               - !Ref MasterDBName

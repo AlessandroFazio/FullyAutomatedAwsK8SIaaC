@@ -501,7 +501,7 @@ install_addon \
   "${EKS_IRSA_WEBHOOK_SA_NAMESPACE}" \
   "amazon/amazon-eks-pod-identity-webhook:latest"
 
-# kubectl taint nodes --all node-role.kubernetes.io/control-plane=:NoSchedule ### TODO: decide where to put this!
+kubectl taint nodes --all node-role.kubernetes.io/control-plane=:NoSchedule
 
 install_addon \
   "${S3_BUCKET}" \

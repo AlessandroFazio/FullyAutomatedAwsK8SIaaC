@@ -209,7 +209,7 @@ Parameters:
   AuroraDBEngineVersion:
     Description: Please enter the engine version for the DBEngineVersion
     Type: String
-    Default: 10.7
+    Default: "13.7"
     MinLength: 1
     MaxLength: 20
 
@@ -223,12 +223,13 @@ Parameters:
   AuroraDBSnapshotName:
     Description: Please enter the snapshot name for the DBSnapshotName
     Type: String
+    Default: ""
 
   AuroraDBBootStrapLambdaRepositoryName:
     Description: Please enter the repository name for the DBBootStrapLambdaRepositoryName
     Type: String
     MinLength: 1
-    MaxLength: 20
+    MaxLength: 100
 
   AuroraDBBootStrapLambdaImageUri:
     Description: Please enter the image uri for the DBBootStrapLambdaImageUri
@@ -240,12 +241,12 @@ Parameters:
     Description: Please enter the name for the KeycloakS3CacheBucketName
     Type: String
     MinLength: 1
-    MaxLength: 20
+    MaxLength: 75
   
   KeycloakInstanceType:
     Description: Please enter the instance type for the KeycloakInstanceType
     Type: String
-    Default: t3.medium
+    Default: t3.small
   
   KeycloakInstanceRootVolumeSize:
     Description: Please enter the root volume size for the KeycloakInstanceRootVolumeSize
@@ -279,21 +280,21 @@ Parameters:
     Description: Please enter the secret id for the KeycloakAdminPasswordSecretId
     Type: String
     MinLength: 1
-    MaxLength: 40
+    MaxLength: 50
   
   KeycloakTopLevelDomain:
     Description:  Please enter the top level domain for the KeycloakTopLevelDomain
     Type: String
     Default: keycloak-example.com
     MinLength: 1
-    MaxLength: 40
+    MaxLength: 50
   
   KeycloakAlbSubDomainName:
     Description: Please enter the sub domain name for the KeycloakAlbSubDomainName
     Type: String
     Default: test.keycloak-example.com
     MinLength: 1
-    MaxLength: 20
+    MaxLength: 50
   
   KeycloakAuroraDBUser:
     Description: Please enter the user for the KeycloakAuroraDBUser
@@ -307,21 +308,21 @@ Parameters:
     Type: String
     Default: keycloak
     MinLength: 1
-    MaxLength: 20
+    MaxLength: 40
   
   KeycloakAuroraDBDatabaseName:
     Description: Please enter the database name for the KeycloakAuroraDBDatabaseName
     Type: String
     Default: keycloak
     MinLength: 1
-    MaxLength: 20
+    MaxLength: 40
 
   ControlPlaneAutoScalingGroupName:
     Description: Please enter the name for the ControlPlaneAsgName
     Type: String
     Default: controlplane-asg
     MinLength: 1
-    MaxLength: 20
+    MaxLength: 40
   
   ControlPlaneAutoScalingGroupDesiredCapacity:
     Description: Please enter the desired capacity for the ControlPlaneAsgName
@@ -375,13 +376,6 @@ Parameters:
     Default: groups
     MinLength: 1
     MaxLength: 20  
-  
-  IRSAEbsCsiDriverSa:
-    Description: Please enter the name for the EbsCsiDriverSa
-    Type: String
-    Default: ebs-csi-controller-sa
-    MinLength: 1
-    MaxLength: 20
 
   IRSAEbsCsiDriverSaNamespace:
     Description: Please enter the namespace for the EbsCsiDriverSaNamespace
@@ -514,9 +508,9 @@ Resources:
         DBEngineVersion: !Ref AuroraDBEngineVersion
         DBInstanceClass: !Ref AuroraDBInstanceClass
         DBSnapshotName: !Ref AuroraDBSnapshotName
-        DBBootStrapLambdaRepositoryName: !Ref DBBootStrapLambdaRepositoryName
-        DBBootStrapLambdaImageUri: !Ref DBBootStrapLambdaImageUri
-        LambdaBootStrapSQLStatementS3Bucket: !Ref S3BucketName 
+        DBBootStrapLambdaRepositoryName: !Ref AuroraDBBootStrapLambdaRepositoryName
+        DBBootStrapLambdaImageUri: !Ref AuroraDBBootStrapLambdaImageUri
+        LambdaBootStrapSQLStatementS3Bucket: !Ref S3BucketName
         LambdaBootStrapSQLStatementS3Key: scripts/sql/init.sql 
   
   KeycloakStack:
@@ -556,14 +550,15 @@ Resources:
   
   IRSAStack:
     Type: AWS::CloudFormation::Stack
-    DeoendsOn:
+    DependsOn: 
       - KeycloakStack
     Properties:
       TemplateURL: !Sub https://s3.amazonaws.com/${S3BucketName}/cf_templates/irsa/stack.yaml
+      Parameters:
         ProjectName: !Ref ProjectName
         EnvironmentName: !Ref EnvironmentName
         StackName: !Ref IRSAStackName
-        OidcProviderUrl: !Sub https://${KeycloakAlbSubDomainName}/realms/kubernetes
+        OidcProviderUrl: !GetAtt KeycloakStack.Outputs.KubernetesOidcProviderUrl 
         EbsCsiDriverSaNamespace: !Ref IRSAEbsCsiDriverSaNamespace
         AwsCloudProviderSaNamespace: !Ref IRSAAwsCloudProviderSaNamespace
         AwsLoadBalancerControllerSaNamespace: !Ref IRSAAwsLoadBalancerControllerSaNamespace
@@ -610,7 +605,7 @@ Resources:
         ControlPlaneInstanceType: !Ref ControlPlaneInstanceType
         ControlPlaneRootVolumeSize: !Ref ControlPlaneRootVolumeSize
         S3BucketName: !Ref S3BucketName
-        OidcProviderUrl: !Sub https://${KeycloakAlbSubDomainName}/realms/kubernetes
+        OidcProviderUrl: !GetAtt KeycloakStack.Outputs.KubernetesOidcProviderUrl
         OidcKeySecretId: !Ref OidcKubernetesKeySecretId
         OidcClientId: !Ref OidcKubernetesClientId
         OidcUsernameClaim: !Ref OidcKubernetesUsernameClaim

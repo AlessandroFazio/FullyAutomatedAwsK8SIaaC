@@ -81,7 +81,7 @@ Parameters:
 
 Resources:
 
-  EcrPrivateRepositoryPullOnlyPolicy:
+  WorkerEcrPrivateRepositoryPullOnlyPolicy:
     Type: AWS::IAM::Policy
     Properties:
       PolicyName: EcrPrivateRepositoryPullOnlyPolicy
@@ -99,8 +99,10 @@ Resources:
               - ecr:ListImages
               - ecr:BatchGetImage
             Resource: "*"
+      Roles:
+        - !Ref WorkerInstanceIAMRole
 
-  S3BucketAccessPolicy:
+  WorkerS3BucketAccessPolicy:
     Type: AWS::IAM::Policy
     Properties:
       PolicyName: WorkerS3BucketAccessPolicy
@@ -114,8 +116,10 @@ Resources:
               - "s3:DescribeBucket"
             Resource:
               - Fn::Sub: arn:aws:s3:::${S3BucketName}/*
+      Roles:
+        - !Ref WorkerInstanceIAMRole
   
-  EC2AccessPolicy:
+  WorkerEC2AccessPolicy:
     Type: AWS::IAM::Policy
     Properties: 
       PolicyName: EC2AccessPolicy
@@ -128,6 +132,8 @@ Resources:
               - ec2:DescribeTags
               - elasticloadbalancing:Describe*
             Resource: "*"
+      Roles:
+        - !Ref WorkerInstanceIAMRole
   
   WorkerInstanceIAMRole:
     Type: AWS::IAM::Role
@@ -143,10 +149,6 @@ Resources:
             Action:
               - sts:AssumeRole
       Path: "/"
-      Policies:
-        - !Ref EcrPrivateRepositoryPullOnlyPolicy
-        - !Ref S3BucketAccessPolicy
-        - !Ref EC2AccessPolicy
       Tags:
         - Key: Name
           Value: WorkerInstanceIAMRole
@@ -162,7 +164,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupName: worker-sg
-      Description: Security Group for Worker Node Instances
+      GroupDescription: Security Group for Worker Node Instances
       VpcId: !Ref VpcId
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -223,14 +225,6 @@ Resources:
       Tags:
         - Key: Name
           Value: WorkersSecurityGroup
-  
-  WorkerKeyPair:
-   Type: 'AWS::EC2::KeyPair'
-   Properties:
-     KeyName: workerKeyPair
-      Tags:
-        - Key: Name
-          Value: WorkerKeyPair
 
   WorkerPlacementGroup:
     Type: AWS::EC2::PlacementGroup
@@ -249,8 +243,6 @@ Resources:
         InstanceType: !Ref WorkerInstanceType
         IamInstanceProfile:
           Arn: !GetAtt WorkerInstanceProfile.Arn
-          Name: WorkerInstanceProfile
-        KeyName: !GetAtt WorkerKeyPair.KeyName
         SecurityGroupIds:
           - !Ref WorkerSecurityGroup  # Reference security group(s) by ID
         BlockDeviceMappings:
@@ -267,6 +259,8 @@ Resources:
         UserData:
           Fn::Base64: !Sub |
             #!/bin/bash
+
+            exec > >(tee /var/log/user-data-stdout.log) 2> >(tee /var/log/user-data-stderr.log >&2)
             apt update -y 
             apt install -y unzip
 
@@ -404,10 +398,6 @@ Outputs:
     Value: !Ref WorkersSecurityGroup
     Export:
       Name: !Sub '${ProjectName}-${EnvironmentName}-${StackName}-WorkersSecurityGroup'
-
-  WorkerKeyPair:
-    Description: Key Pair for Worker Nodes
-    Value: !Ref WorkerKeyPair
 
   WorkerPlacementGroup:
     Description: Placement Group for Worker Nodes

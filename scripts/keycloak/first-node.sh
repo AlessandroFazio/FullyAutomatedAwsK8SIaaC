@@ -26,6 +26,8 @@ function install_and_configure_utils() {
     sudo apt install -y unzip
     sudo apt install -y openjdk-17-jre
     sudo apt install -y openjdk-17-jdk
+    sudo apt install -y python-pip
+    sudo pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
 
     export JAVA_HOME=/usr/lib/jvm/java-1.17.0-openjdk-amd64
     export PATH=$JAVA_HOME/bin:$PATH
@@ -361,6 +363,17 @@ function scale_keycloak_asg() {
     fi
 }
 
+function notify_cloudformation() {
+    local aws_cf_stack_name=$1
+    local keycloak_asg_resource_name=$2
+    local aws_region=$3
+
+    sudo /usr/local/bin/cfn-signal -e $? \
+        --stack ${aws_cf_stack_name} \
+        --resource ${keycloak_asg_resource_name} \
+        --region ${aws_region}
+}
+
 ### MAIN ###
 # Usage: ./first-node.sh <KEYCLOAK_VERSION> <FRONTEND_PROXY_DNS> <DB_SCHEMA> <DB_NAME> <DB_HOST> <DB_PORT> <DB_USER> <AWS_REGION> <S3_BUCKET_NAME> <KEYCLOAK_ASG_NAME> <KEYCLOAK_ASG_DESIRED_CAPACITY> <KEYCLOAK_ADMIN_PASSWORD_SECRET_ID> <K8S_KEY_SECRET_ID>
 KEYCLOAK_VERSION=${1}
@@ -376,6 +389,8 @@ KEYCLOAK_ASG_NAME=${10}
 KEYCLOAK_ASG_DESIRED_CAPACITY=${11}
 KEYCLOAK_ADMIN_PASSWORD_SECRET_ID=${12}
 K8S_KEY_SECRET_ID=${13}
+AWS_CF_STACK_NAME=${14}
+KEYCLOAL_ASG_RESOURCE_NAME=${15}
 
 required_args=(
     KEYCLOAK_VERSION
@@ -391,6 +406,8 @@ required_args=(
     KEYCLOAK_ASG_DESIRED_CAPACITY
     KEYCLOAK_ADMIN_PASSWORD_SECRET_ID
     K8S_KEY_SECRET_ID
+    AWS_CF_STACK_NAME
+    KEYCLOAL_ASG_RESOURCE_NAME
 )
 
 # Constants
@@ -484,5 +501,10 @@ create_privkey_and_upload_to_sm \
 scale_keycloak_asg \
     "${KEYCLOAK_ASG_NAME}" \
     "${KEYCLOAK_ASG_DESIRED_CAPACITY}"
+
+notify_cloudformation \
+    "${AWS_CF_STACK_NAME}" \
+    "${KEYCLOAL_ASG_RESOURCE_NAME}" \
+    "${AWS_REGION}"
 
 # TODO: Create Lambda function for Revoking permissions to ASG after having the first node up and running

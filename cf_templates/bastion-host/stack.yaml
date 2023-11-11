@@ -50,7 +50,7 @@ Parameters:
 
 Resources:
 
-  S3BucketAccessPolicy:
+  BastionHostS3BucketAccessPolicy:
     Type: AWS::IAM::Policy
     Properties:
       PolicyName: BastionHostS3BucketAccessPolicy
@@ -63,7 +63,9 @@ Resources:
               - "s3:ListBucket"
               - "s3:DescribeBucket"
             Resource:
-              - Fn::Sub: arn:aws:s3:::${S3BucketName}/*
+              - Fn::Sub: "arn:aws:s3:::${S3BucketName}/ssh/*"
+      Roles:
+        - !Ref BastionHostInstanceIAMRole
   
   BastionHostInstanceIAMRole:
     Type: AWS::IAM::Role
@@ -79,8 +81,6 @@ Resources:
             Action:
               - sts:AssumeRole
       Path: /
-      Policies:
-        - !Ref S3BucketAccessPolicy
       Tags:
         - Key: Name
           Value: BastionHostInstanceIAMRole
@@ -91,20 +91,12 @@ Resources:
       InstanceProfileName: BastionHostInstanceProfile
       Roles:
         - !Ref BastionHostInstanceIAMRole
-
-  BastionHostKeyPair:
-   Type: 'AWS::EC2::KeyPair'
-   Properties:
-     KeyName: bastionHostKeys
-      Tags:
-        - Key: Name
-          Value: !Sub ${EnvironmentName} Bastion Host Key Pair
   
   BastionHostSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupName: BastionHostSecurityGroup
-      Description: Security group for the bastion host
+      GroupDescription: Bastion Host Security Group
       VpcId: !Ref VpcId
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -116,25 +108,27 @@ Resources:
           FromPort: 22
           ToPort: 22
           CidrIp: !Ref VpcCIDR
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref VpcCIDR
   
-  BastionHostLauchTemplate:
+  BastionHostLaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
     Properties:
-      LaunchTemplateName: BastionHostLauchTemplate
+      LaunchTemplateName: BastionHostLaunchTemplate
       LaunchTemplateData:
         ImageId: ami-0df435f331839b2d6
         InstanceType: !Ref BastionHostInstanceType
-        KeyName: !Ref BastionHostKeyPair.KeyName
         SecurityGroupIds:
           - !Ref BastionHostSecurityGroup
         IamInstanceProfile:
           Arn: !GetAtt BastionHostInstanceProfile.Arn
-          Name: BastionHostInstanceProfile
         BlockDeviceMappings:
-          - DeviceName: /dev/sda1
+          - DeviceName: /dev/xvda
             Ebs:
               VolumeSize: !Ref BastionHostRootVolumeSize
-              VolumeType: gp2 # Choose an appropriate volume type (e.g., gp2, io1)
+              VolumeType: gp3 # Choose an appropriate volume type (e.g., gp2, io1)
               DeleteOnTermination: true
         Monitoring:
           Enabled: true
@@ -146,7 +140,14 @@ Resources:
         UserData:
           Fn::Base64: !Sub |
             #!/bin/bash
+
+            exec > >(tee /var/log/user-data-stdout.log) 2> >(tee /var/log/user-data-stderr.log >&2)
             yum update -y 
+
+            # install aws cli
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            ./aws/install
 
             # Download the public key from S3
             aws s3 cp s3://${S3BucketName}/ssh/client-key.pub /tmp/client-key.pub
@@ -161,20 +162,14 @@ Resources:
             # Allow AgentForwarding on SSH server
             sed -i 's/#AllowAgentForwarding yes/AllowAgentForwarding yes/' /etc/ssh/sshd_config
             systemctl restart ssh
-  
-  BastionHostPlacementGroup:
-    Type: AWS::EC2::PlacementGroup
-    Properties:
-      Strategy: cluster
-      GroupName: BastionHostPlacementGroup
 
   BastionHostAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       AutoScalingGroupName: BastionHostAutoScalingGroup
       LaunchTemplate:
-        LaunchTemplateId: !Ref BastionHostLauchTemplate
-        Version: !GetAtt BastionHostLauchTemplate.LatestVersionNumber
+        LaunchTemplateId: !Ref BastionHostLaunchTemplate
+        Version: !GetAtt BastionHostLaunchTemplate.LatestVersionNumber
       MinSize: 1
       MaxSize: 1
       DesiredCapacity: 1
@@ -184,16 +179,11 @@ Resources:
         - Key: Name
           Value: !Sub ${EnvironmentName} Bastion Host Instance
           PropagateAtLaunch: true
-      PlacementGroup: !Ref BastionHostPlacementGroup
 
 Outputs:
   BastionHostSecurityGroupId:
     Description: Security Group ID of the bastion host
     Value: !GetAtt BastionHostSecurityGroup.GroupId
-
-  BastionHostKeyPairName:
-    Description: Name of the Bastion Host Key Pair
-    Value: !GetAtt BastionHostKeyPair.KeyName
 
   BastionHostAutoScalingGroup:
     Description: Auto Scaling Group of the bastion host

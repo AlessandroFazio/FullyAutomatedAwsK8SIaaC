@@ -66,7 +66,8 @@ def handler(event, context):
         sys.exit()
 
 def is_instance_started_event(event):
-    sns_message = json.loads(event['Records'][0]['Sns']['Message'])
+    sns_message = json.loads(event['Records'][0]['Sns'])
+    logger.info("Received SNS message: " + str(sns_message))
     
     # Extract the 'EventID' from the message attributes
     message_attributes = sns_message.get('MessageAttributes', {})

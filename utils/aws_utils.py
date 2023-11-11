@@ -100,6 +100,7 @@ def ecr_login(ecr_client) -> Dict[str, str]:
     
     subprocess.call(ecr_login_command, shell=True)
 
+
 def get_ecr_repository_uri(ecr_client, repository_name: str) -> Dict[str, str]:
     """Get ECR repository."""
     try:
@@ -119,6 +120,7 @@ def get_ecr_repository_uri(ecr_client, repository_name: str) -> Dict[str, str]:
         else:
             LOGGER.error(f"An error occurred: {e}")
             raise Exception(f"An error occurred: {e}")
+
 
 def create_ecr_repository(ecr_client, repository_name: str) -> None:
     """Create ECR repository."""
@@ -165,6 +167,7 @@ def push_to_ecr(docker_client: DockerClient,
     push_log = docker_client.images.push(repository_uri, tag='latest')
     LOGGER.info(f"Pushed image to AWS ECR with tag: latest")
     LOGGER.debug(f"Push log: {push_log}")
+    return repository_uri + ':latest'
 
 
 def read_aws_credentials(filename: str='.aws_credentials.json') -> Dict[str, str]:
@@ -197,6 +200,7 @@ def read_aws_credentials(filename: str='.aws_credentials.json') -> Dict[str, str
             raise RuntimeError(msg)
 
     return credentials
+
 
 def upload_to_secret_manager(client, secret_name: str, secret_value: str) -> None:
     """Upload secret to AWS Secret Manager.
